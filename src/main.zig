@@ -28,10 +28,11 @@ pub fn main() !void {
         "Not Minecraft",
         c.SDL_WINDOWPOS_UNDEFINED,
         c.SDL_WINDOWPOS_UNDEFINED,
-        600, 600,
+        width, height,
         c.SDL_WINDOW_ALLOW_HIGHDPI |
         c.SDL_WINDOW_OPENGL |
-        c.SDL_WINDOW_ALWAYS_ON_TOP
+        c.SDL_WINDOW_ALWAYS_ON_TOP |
+        c.SDL_WINDOW_RESIZABLE
     ) orelse return error.CreatingWindow;
     defer c.SDL_DestroyWindow(window);
     
@@ -93,12 +94,20 @@ pub fn main() !void {
         var my: c_int = undefined;
         _ = c.SDL_GetMouseState(&mx, &my);
         
+        c.SDL_GetWindowSize(window, &width, &height);
+        c.glViewport(0, 0, width, height);
+        
         // Draw
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
         
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
-        c.glFrustum(-1, 1, -1, 1, 0.5, 50);
+        
+        const width_f64: f64 = @floatFromInt(width);
+        const height_f64: f64 = @floatFromInt(height);
+        const aspect = width_f64 / height_f64;
+        
+        c.glFrustum(-aspect, aspect, -1, 1, 0.5, 50);
         c.glTranslatef(0, 0, -1.5);
         c.glRotatef(t / 150, 1, 0, 0);
         c.glRotatef(t / 75, 0, 1, 0);
