@@ -4,6 +4,9 @@ const c = @import("c.zig");
 
 const terrain = @embedFile("assets/terrain.png");
 
+var width: c_int = 600;
+var height: c_int = 600;
+
 pub fn main() !void {
     _ = c.SDL_Init(c.SDL_INIT_VIDEO);
     defer c.SDL_Quit();
