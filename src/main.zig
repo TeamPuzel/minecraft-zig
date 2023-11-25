@@ -6,6 +6,7 @@ const terrain = @embedFile("assets/terrain.png");
 
 var width: c_int = 600;
 var height: c_int = 600;
+var is_hidpi: bool = false;
 
 pub fn main() !void {
     _ = c.SDL_Init(c.SDL_INIT_VIDEO);
@@ -36,6 +37,8 @@ pub fn main() !void {
     ) orelse return error.CreatingWindow;
     defer c.SDL_DestroyWindow(window);
     
+    _ = c.SDL_SetRelativeMouseMode(1);
+    
     // OpenGL
     _ = c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MAJOR_VERSION, 1);
     _ = c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MINOR_VERSION, 1);
@@ -50,8 +53,6 @@ pub fn main() !void {
     defer c.SDL_GL_DeleteContext(context);
     
     var event: c.SDL_Event = undefined;
-    
-    var t: f32 = 0;
     
     c.glClearColor(0.0, 0.0, 0.0, 1.0);
     c.glEnable(c.GL_DEPTH_TEST);
@@ -89,12 +90,22 @@ pub fn main() !void {
             }
         }
         
-        // Input
+        // Mouse look
         var mx: c_int = undefined;
         var my: c_int = undefined;
-        _ = c.SDL_GetMouseState(&mx, &my);
+        _ = c.SDL_GetRelativeMouseState(&mx, &my);
+        const mxf: f64 = @floatFromInt(mx);
+        const myf: f64 = @floatFromInt(my);
+        facing_h += mxf / 10;
+        facing_v += myf / 10;
+        // facing_h = @mod(facing_h, 360);
+        // facing_v = @mod(facing_v, 360);
         
-        c.SDL_GetWindowSize(window, &width, &height);
+        facing_v = std.math.clamp(facing_v, -90, 90);
+        
+        processInput();
+        
+        c.SDL_GL_GetDrawableSize(window, &width, &height);
         c.glViewport(0, 0, width, height);
         
         // Draw
@@ -107,10 +118,15 @@ pub fn main() !void {
         const height_f64: f64 = @floatFromInt(height);
         const aspect = width_f64 / height_f64;
         
-        c.glFrustum(-aspect, aspect, -1, 1, 0.5, 50);
-        c.glTranslatef(0, 0, -1.5);
-        c.glRotatef(t / 150, 1, 0, 0);
-        c.glRotatef(t / 75, 0, 1, 0);
+        // NOTE: Matrices take effect backwards
+        c.glFrustum(-aspect / 2, aspect / 2, -0.5, 0.5, 0.4, 50);
+        
+        c.glRotated(facing_v, 1, 0, 0);
+        c.glRotated(facing_h, 0, 1, 0);
+        
+        c.glTranslated(pos_x, pos_y, pos_z);
+        // c.glRotatef(t / 150, 1, 0, 0);
+        // c.glRotatef(t / 75, 0, 1, 0);
         
         Block.grass.draw(0, 0);
         
@@ -118,6 +134,36 @@ pub fn main() !void {
         
         c.SDL_GL_SwapWindow(window);
         t += 1;
+    }
+}
+
+var t: f32 = 0;
+var facing_v: f64 = 0;
+var facing_h: f64 = 0;
+var pos_x: f64 = 0;
+var pos_y: f64 = 0;
+var pos_z: f64 = -1.5;
+
+fn vecFromAngle(deg: f64) packed struct { x: f64, y: f64 } {
+    const x: f32 = 0;
+    const y: f32 = 1;
+    const rad = std.math.degreesToRadians(f64, deg);
+    const sin = std.math.sin(rad);
+    const cos = std.math.cos(rad);
+    return .{
+        .x = x * cos - y * sin,
+        .y = x * sin + y * cos
+    };
+}
+
+fn processInput() void {
+    const keymap = c.SDL_GetKeyboardState(null);
+    
+    const heading = vecFromAngle(facing_h);
+    
+    if (keymap[c.SDL_SCANCODE_W] == 1) {
+        pos_x += heading.x / 7000;
+        pos_z += heading.y / 7000;
     }
 }
 
