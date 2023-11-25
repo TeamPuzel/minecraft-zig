@@ -4,109 +4,59 @@ const c = @import("c.zig");
 
 const terrain = @embedFile("assets/terrain.png");
 
-var width: c_int = 600;
-var height: c_int = 600;
-var is_hidpi: bool = false;
+const Application = @import("application.zig").Application;
+const Color = @import("image.zig").Color;
 
 pub fn main() !void {
-    _ = c.SDL_Init(c.SDL_INIT_VIDEO);
-    defer c.SDL_Quit();
+    var app = try Application.init("Minecraft", 800, 600);
+    defer app.deinit();
     
-    _ = c.IMG_Init(c.IMG_INIT_PNG);
-    defer c.IMG_Quit();
-    
-    _ = c.SDL_GL_LoadLibrary(null);
+    var world = World.init();
     
     // Textures
-    const rw = c.SDL_RWFromConstMem(terrain.ptr, terrain.len);
-    const temp_surface = c.IMG_Load_RW(rw, 0);
-    const surface = c.SDL_ConvertSurfaceFormat(temp_surface, c.SDL_PIXELFORMAT_RGBA32, 0);
+    var atlas = app.pngToRGBA(terrain);
+    defer atlas.deinit();
     
-    _ = c.SDL_RWclose(rw);
+    atlas.becomeTexture();
     
-    // Window
-    const window = c.SDL_CreateWindow(
-        "Not Minecraft",
-        c.SDL_WINDOWPOS_UNDEFINED,
-        c.SDL_WINDOWPOS_UNDEFINED,
-        width, height,
-        c.SDL_WINDOW_ALLOW_HIGHDPI |
-        c.SDL_WINDOW_OPENGL |
-        c.SDL_WINDOW_ALWAYS_ON_TOP |
-        c.SDL_WINDOW_RESIZABLE
-    ) orelse return error.CreatingWindow;
-    defer c.SDL_DestroyWindow(window);
+    while (!app.shouldQuit()) {
+        world.update();
+        world.draw(&app);
+        app.swapBuffers();
+    }
+}
+
+const World = struct {
+    alloc: std.heap.GeneralPurposeAllocator(.{}),
+    tick: u64 = 0,
+    player: Player = .{},
+    entities: std.ArrayList(?*anyopaque),
+    chunk: Chunk,
     
-    _ = c.SDL_SetRelativeMouseMode(1);
+    fn init() World {
+        var alloc = std.heap.GeneralPurposeAllocator(.{}) {};
+        var world = World {
+            .alloc = alloc,
+            .entities = std.ArrayList(?*anyopaque).init(alloc.allocator()),
+            .chunk = Chunk.generate(1, 1)
+        };
+        world.player.super.position = @Vector(3, f64) { 0, 18, 0 };
+        return world;
+    }
     
-    // OpenGL
-    _ = c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MAJOR_VERSION, 1);
-    _ = c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MINOR_VERSION, 1);
-    _ = c.SDL_GL_SetAttribute(
-        c.SDL_GL_CONTEXT_PROFILE_MASK, c.SDL_GL_CONTEXT_PROFILE_COMPATIBILITY
-    );
-    _ = c.SDL_GL_SetAttribute(c.SDL_GL_DOUBLEBUFFER, 1);
+    fn deinit(self: *World) void {
+        self.entities.deinit();
+        _ = self.alloc.deinit();
+    }
     
-    _ = c.SDL_GL_SetSwapInterval(1);
+    fn update(self: *World) void {
+        self.player.update();
+        self.tick += 1;
+    }
     
-    const context = c.SDL_GL_CreateContext(window);
-    defer c.SDL_GL_DeleteContext(context);
-    
-    var event: c.SDL_Event = undefined;
-    
-    c.glClearColor(0.0, 0.0, 0.0, 1.0);
-    c.glEnable(c.GL_DEPTH_TEST);
-    c.glEnable(c.GL_TEXTURE_2D);
-    
-    var tex: c_uint = undefined;
-    c.glGenTextures(1, &tex);
-    c.glBindTexture(c.GL_TEXTURE_2D, tex);
-    c.glTexImage2D(
-        c.GL_TEXTURE_2D,
-        0,
-        c.GL_RGBA,
-        surface.*.w,
-        surface.*.h,
-        0,
-        c.GL_RGBA,
-        c.GL_UNSIGNED_BYTE,
-        surface.*.pixels
-    );
-    
-    c.glTexParameterf(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
-    c.glTexParameterf(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
-    c.glTexParameterf(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_S, c.GL_REPEAT);
-    c.glTexParameterf(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_T, c.GL_REPEAT);
-    
-    c.glColor3f(1, 1, 1);
-    
-    loop:
-    while (true) {
-        // Events
-        while (c.SDL_PollEvent(&event) > 0) {
-            switch (event.type) {
-                c.SDL_QUIT => break :loop,
-                else => break
-            }
-        }
-        
-        // Mouse look
-        var mx: c_int = undefined;
-        var my: c_int = undefined;
-        _ = c.SDL_GetRelativeMouseState(&mx, &my);
-        const mxf: f64 = @floatFromInt(mx);
-        const myf: f64 = @floatFromInt(my);
-        facing_h += mxf / 10;
-        facing_v += myf / 10;
-        // facing_h = @mod(facing_h, 360);
-        // facing_v = @mod(facing_v, 360);
-        
-        facing_v = std.math.clamp(facing_v, -90, 90);
-        
-        processInput();
-        
-        c.SDL_GL_GetDrawableSize(window, &width, &height);
-        c.glViewport(0, 0, width, height);
+    fn draw(self: *World, app: *Application) void {
+        const display = app.getActualSize();
+        c.glViewport(0, 0, display.width, display.height);
         
         // Draw
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
@@ -114,35 +64,210 @@ pub fn main() !void {
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
         
-        const width_f64: f64 = @floatFromInt(width);
-        const height_f64: f64 = @floatFromInt(height);
+        const width_f64: f64 = @floatFromInt(display.width);
+        const height_f64: f64 = @floatFromInt(display.height);
         const aspect = width_f64 / height_f64;
         
         // NOTE: Matrices take effect backwards
         c.glFrustum(-aspect / 2, aspect / 2, -0.5, 0.5, 0.4, 50);
         
-        c.glRotated(facing_v, 1, 0, 0);
-        c.glRotated(facing_h, 0, 1, 0);
+        c.glRotated(self.player.super.orientation.pitch, 1, 0, 0);
+        c.glRotated(self.player.super.orientation.yaw, 0, 1, 0);
         
-        c.glTranslated(pos_x, pos_y, pos_z);
-        // c.glRotatef(t / 150, 1, 0, 0);
-        // c.glRotatef(t / 75, 0, 1, 0);
+        c.glTranslated(
+            self.player.super.position[0],
+            -self.player.super.position[1],
+            self.player.super.position[2]
+        );
         
-        Block.grass.draw(0, 0);
+        self.chunk.draw(1, 1);
         
         c.glPopMatrix();
-        
-        c.SDL_GL_SwapWindow(window);
-        t += 1;
     }
-}
+};
 
-var t: f32 = 0;
-var facing_v: f64 = 0;
-var facing_h: f64 = 0;
-var pos_x: f64 = 0;
-var pos_y: f64 = 0;
-var pos_z: f64 = -1.5;
+const Chunk = struct {
+    blocks: [16][16][16]Block = @bitCast([_]Block { .Air } ** (16 * 16 * 16)),
+    
+    fn generate(x: i64, y: i64) Chunk {
+        _ = x; _ = y;
+        var buf = Chunk {};
+        
+        for (0..16) |ix| {
+            for (0..16) |iz| {
+                for (0..16) |iy| {
+                    if (iy < 128) buf.blocks[ix][iy][iz] = .Stone;
+                }
+            }
+        }
+        
+        return buf;
+    }
+    
+    fn draw(self: *Chunk, x: i64, z: i64) void {
+        for (0..16) |ix| {
+            for (0..16) |iz| {
+                for (0..16) |iy| {
+                    const ixc: i64 = @intCast(ix);
+                    const iyc: i64 = @intCast(iy);
+                    const izc: i64 = @intCast(iz);
+                    
+                    self.blocks[ix][iy][iz]
+                        .draw(Block.Faces.all, ixc * x, iyc, izc * z);
+                }
+            }
+        }
+    }
+    
+};
+
+const Block = enum {
+    Air,
+    Stone,
+    
+    const Faces = packed struct {
+        left: bool = false,
+        right: bool = false,
+        top: bool = false,
+        bottom: bool = false,
+        front: bool = false,
+        back: bool = false,
+        
+        _pad: u2 = 0,
+        
+        const all = Faces {
+            .left = false,
+            .right = false,
+            .top = false,
+            .bottom = false,
+            .front = false,
+            .back = false
+        };
+    };
+    
+    const size: f32 = 1.0;
+    const half_size: f32 = 0.5;
+    
+    const atlas_scale = 0.0625;
+    
+    fn draw(self: *const Block, faces: Faces, x: i64, y: i64, z: i64) void {
+        _ = faces;
+        if (self.* == .Air) return; // hack
+        
+        const xf: f32 = @floatFromInt(x);
+        const yf: f32 = @floatFromInt(y);
+        const zf: f32 = @floatFromInt(z);
+        
+        // Back
+        c.glBegin(c.GL_QUADS);
+        c.glTexCoord2f(0.1875, 0.0625);
+        c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.1875, 0);
+        c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.25, 0);
+        c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.25, 0.0625);
+        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+        c.glEnd();
+        
+        // Right
+        c.glBegin(c.GL_QUADS);
+        c.glTexCoord2f(0.1875, 0.0625);
+        c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0.1875, 0);
+        c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0.25, 0);
+        c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.25, 0.0625);
+        c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+        c.glEnd();
+        
+        // Left
+        c.glBegin(c.GL_QUADS);
+        c.glTexCoord2f(0.1875, 0.0625);
+        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.1875, 0);
+        c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.25, 0);
+        c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0.25, 0.0625);
+        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+        c.glEnd();
+        
+        // Top
+        c.glColor3f(0.6, 1, 0.4);
+        c.glBegin(c.GL_QUADS);
+        c.glTexCoord2f(0, 0);
+        c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.0625, 0);
+        c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0.0625, 0.0625);
+        c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0, 0.0625);
+        c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
+        c.glEnd();
+        c.glColor3f(1, 1, 1);
+        
+        // Bottom
+        c.glBegin(c.GL_QUADS);
+        c.glTexCoord2f(0.0625 * 2, 0.0625);
+        c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0.0625 * 2, 0);
+        c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.0625 * 3, 0);
+        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+        c.glTexCoord2f(0.0625 * 3, 0.0625);
+        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+        c.glEnd();
+        
+        // Front
+        c.glBegin(c.GL_QUADS);
+        c.glTexCoord2f(0.1875, 0.0625);
+        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0.1875, 0);
+        c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0.25, 0);
+        c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+        c.glTexCoord2f(0.25, 0.0625);
+        c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+        c.glEnd();
+    }
+};
+
+const Orientation = packed struct {
+    yaw: f64 = 0, pitch: f64 = 0, roll: f64 = 0
+};
+
+const Entity = struct {
+    position: @Vector(3, f64) = @Vector(3, f64) { 0, 0, 0 },
+    orientation: Orientation = .{},
+    bounding_box: ?struct {
+        origin: @Vector(3, f64),
+        size: @Vector(3, f64)
+    } = null
+};
+
+const Player = struct {
+    super: Entity = .{},
+    
+    fn update(self: *Player) void {
+        var mx: c_int = undefined;
+        var my: c_int = undefined;
+        _ = c.SDL_GetRelativeMouseState(&mx, &my);
+        const mxf: f64 = @floatFromInt(mx);
+        const myf: f64 = @floatFromInt(my);
+        self.super.orientation.yaw += mxf / 10;
+        self.super.orientation.pitch += myf / 10;
+        self.super.orientation.pitch = std.math.clamp(self.super.orientation.pitch, -90, 90);
+        
+        const keymap = c.SDL_GetKeyboardState(null);
+        const heading = vecFromAngle(self.super.orientation.yaw);
+        if (keymap[c.SDL_SCANCODE_W] == 1) {
+            self.super.position[0] += heading.x / 100;
+            self.super.position[2] += heading.y / 100;
+        }
+    }
+};
 
 fn vecFromAngle(deg: f64) packed struct { x: f64, y: f64 } {
     const x: f32 = 0;
@@ -155,128 +280,3 @@ fn vecFromAngle(deg: f64) packed struct { x: f64, y: f64 } {
         .y = x * sin + y * cos
     };
 }
-
-fn processInput() void {
-    const keymap = c.SDL_GetKeyboardState(null);
-    
-    const heading = vecFromAngle(facing_h);
-    
-    if (keymap[c.SDL_SCANCODE_W] == 1) {
-        pos_x += heading.x / 7000;
-        pos_z += heading.y / 7000;
-    }
-}
-
-const Color = packed struct {
-    r: f32, g: f32, b: f32, a: f32,
-    
-    fn bind(self: *const Color) void {
-        c.glColor4f(self.r, self.g, self.b, self.a);
-    }
-    
-    const white = Color { .r = 1, .g = 1, .b = 1, .a = 1 }; 
-};
-
-const Block = struct {
-    texture: struct {
-        const Pos = packed struct { x: u32, y: u32, color: Color = Color.white };
-        front: Pos,
-        back: Pos,
-        left: Pos,
-        right: Pos,
-        top: Pos,
-        bottom: Pos
-    },
-    
-    const size: f32 = 0.5;
-    const atlas_scale = 0.0625;
-    
-    fn draw(self: *const Block, x: i64, y: i64) void {
-        _ = self; _ = x; _ = y;
-        
-        // Back
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.1875, 0.0625);
-        c.glVertex3f(size,-size, size);
-        c.glTexCoord2f(0.1875, 0);
-        c.glVertex3f(size, size, size);
-        c.glTexCoord2f(0.25, 0);
-        c.glVertex3f(-size, size, size);
-        c.glTexCoord2f(0.25, 0.0625);
-        c.glVertex3f(-size, -size, size);
-        c.glEnd();
-        
-        // Right
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.1875, 0.0625);
-        c.glVertex3f(size, -size, -size);
-        c.glTexCoord2f(0.1875, 0);
-        c.glVertex3f(size, size, -size);
-        c.glTexCoord2f(0.25, 0);
-        c.glVertex3f(size, size, size);
-        c.glTexCoord2f(0.25, 0.0625);
-        c.glVertex3f(size, -size, size);
-        c.glEnd();
-        
-        // Left
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.1875, 0.0625);
-        c.glVertex3f(-size, -size, size);
-        c.glTexCoord2f(0.1875, 0);
-        c.glVertex3f(-size, size, size);
-        c.glTexCoord2f(0.25, 0);
-        c.glVertex3f(-size, size, -size);
-        c.glTexCoord2f(0.25, 0.0625);
-        c.glVertex3f(-size, -size, -size);
-        c.glEnd();
-        
-        // Top
-        c.glColor3f(0.6, 1, 0.4);
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0, 0);
-        c.glVertex3f(size, size, size);
-        c.glTexCoord2f(0.0625, 0);
-        c.glVertex3f(size, size, -size);
-        c.glTexCoord2f(0.0625, 0.0625);
-        c.glVertex3f(-size, size, -size);
-        c.glTexCoord2f(0, 0.0625);
-        c.glVertex3f(-size, size, size);
-        c.glEnd();
-        c.glColor3f(1, 1, 1);
-        
-        // Bottom
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.0625 * 2, 0.0625);
-        c.glVertex3f(size, -size, -size);
-        c.glTexCoord2f(0.0625 * 2, 0);
-        c.glVertex3f(size, -size, size);
-        c.glTexCoord2f(0.0625 * 3, 0);
-        c.glVertex3f(-size, -size, size);
-        c.glTexCoord2f(0.0625 * 3, 0.0625);
-        c.glVertex3f(-size, -size, -size);
-        c.glEnd();
-        
-        // Front
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.1875, 0.0625);
-        c.glVertex3f(-size, -size, -size);
-        c.glTexCoord2f(0.1875, 0);
-        c.glVertex3f(-size, size, -size);
-        c.glTexCoord2f(0.25, 0);
-        c.glVertex3f(size, size, -size);
-        c.glTexCoord2f(0.25, 0.0625);
-        c.glVertex3f(size, -size, -size); 
-        c.glEnd();
-    }
-    
-    const grass = Block {
-        .texture = .{
-            .front = .{ .x = 3, .y = 0 },
-            .back = .{ .x = 3, .y = 0 },
-            .left = .{ .x = 3, .y = 0 },
-            .right = .{ .x = 3, .y = 0 },
-            .top = .{ .x = 0, .y = 0 },
-            .bottom = .{ .x = 2, .y = 0 }
-        }
-    };
-};
