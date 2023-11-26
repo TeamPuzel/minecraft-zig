@@ -7,6 +7,9 @@ const terrain = @embedFile("assets/terrain.png");
 const Application = @import("application.zig").Application;
 const Color = @import("image.zig").Color;
 
+var gpa = std.heap.GeneralPurposeAllocator(.{}) {};
+var alloc = gpa.allocator();
+
 pub fn main() !void {
     var app = try Application.init("Minecraft", 800, 600);
     defer app.deinit();
@@ -27,7 +30,6 @@ pub fn main() !void {
 }
 
 const World = struct {
-    alloc: std.heap.GeneralPurposeAllocator(.{}),
     tick: u64 = 0,
     player: Player = .{},
     entities: std.ArrayList(?*anyopaque),
@@ -36,11 +38,9 @@ const World = struct {
     const Chunks = std.AutoHashMap(packed struct { x: i64, z: i64 }, Chunk);
     
     fn init() World {
-        var alloc = std.heap.GeneralPurposeAllocator(.{}) {};
         var world = World {
-            .alloc = alloc,
-            .entities = std.ArrayList(?*anyopaque).init(alloc.allocator()),
-            .chunks = Chunks.init(alloc.allocator())
+            .entities = std.ArrayList(?*anyopaque).init(alloc),
+            .chunks = Chunks.init(alloc)
         };
         world.player.super.position = @Vector(3, f64) { 0, 18, 0 };
         return world;
@@ -49,7 +49,6 @@ const World = struct {
     fn deinit(self: *World) void {
         self.chunks.deinit();
         self.entities.deinit();
-        _ = self.alloc.deinit();
     }
     
     fn update(self: *World) void {
@@ -63,14 +62,11 @@ const World = struct {
         while (xi <= 2) {
             var zi: i64 = -2;
             while (zi <= 2) {
-                if (xi != 0 and zi != 0) {
+                if (!self.chunks.contains(.{ .x = xi, .z = zi }))
                     self.chunks.putNoClobber(
                         .{ .x = xi, .z = zi },
                         Chunk.generate(xi, zi)
-                    ) catch |err| {
-                        std.debug.print("{any}", .{ err });
-                    };
-                }
+                    ) catch {};
                 zi += 1;
             }
             xi += 1;
@@ -83,7 +79,6 @@ const World = struct {
         
         // Draw
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
-        
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
         
@@ -138,13 +133,50 @@ const Chunk = struct {
                     const iyc: i64 = @intCast(iy);
                     const izc: i64 = @intCast(iz);
                     
+                    const left   = @Vector(3, i64) { ixc - 1, iyc, izc };
+                    const right  = @Vector(3, i64) { ixc + 1, iyc, izc };
+                    const top    = @Vector(3, i64) { ixc, iyc + 1, izc };
+                    const bottom = @Vector(3, i64) { ixc, iyc - 1, izc };
+                    const front  = @Vector(3, i64) { ixc, iyc, izc - 1 };
+                    const back   = @Vector(3, i64) { ixc, iyc, izc + 1 };
+                    
+                    const faces = Block.Faces {
+                        .left = self.isEmptyAt(left),
+                        .right = self.isEmptyAt(right),
+                        .top = self.isEmptyAt(top),
+                        .bottom = self.isEmptyAt(bottom),
+                        .front = self.isEmptyAt(front),
+                        .back = self.isEmptyAt(back)
+                    };
+                    
                     self.blocks[ix][iy][iz]
-                        .draw(Block.Faces.all, ixc * x, iyc, izc * z);
+                        .draw(faces, ixc + 16 * x, iyc, izc + 16 * z);
                 }
             }
         }
     }
     
+    fn blockAt(self: *const Chunk, position: @Vector(3, i64)) Block {
+        const ux: usize = @intCast(position[0]);
+        const uy: usize = @intCast(position[1]);
+        const uz: usize = @intCast(position[2]);
+        
+        return self.blocks[ux][uy][uz];
+    }
+    
+    fn isEmptyAt(self: *const Chunk, position: @Vector(3, i64)) bool {
+        if (
+            position[0] < 0 or position[0] > 15 or
+            position[1] < 0 or position[1] > 15 or
+            position[2] < 0 or position[2] > 15
+        ) {
+            return true;
+        } else if (self.blockAt(position) == .Air) {
+            return true;
+        } else {
+            return false;
+        }
+    }
 };
 
 const Block = enum {
@@ -152,16 +184,25 @@ const Block = enum {
     Stone,
     
     const Faces = packed struct {
-        left: bool = false,
-        right: bool = false,
-        top: bool = false,
-        bottom: bool = false,
-        front: bool = false,
-        back: bool = false,
+        left: bool,
+        right: bool,
+        top: bool,
+        bottom: bool,
+        front: bool,
+        back: bool,
         
         _pad: u2 = 0,
         
         const all = Faces {
+            .left = true,
+            .right = true,
+            .top = true,
+            .bottom = true,
+            .front = true,
+            .back = true
+        };
+        
+        const none = Faces {
             .left = false,
             .right = false,
             .top = false,
@@ -177,86 +218,97 @@ const Block = enum {
     const atlas_scale = 0.0625;
     
     fn draw(self: *const Block, faces: Faces, x: i64, y: i64, z: i64) void {
-        _ = faces;
         if (self.* == .Air) return; // hack
         
         const xf: f32 = @floatFromInt(x);
         const yf: f32 = @floatFromInt(y);
         const zf: f32 = @floatFromInt(z);
         
-        // Back
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.1875, 0.0625);
-        c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.1875, 0);
-        c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.25, 0);
-        c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.25, 0.0625);
-        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
-        c.glEnd();
+        // Left
+        if (faces.left) {
+            c.glBegin(c.GL_QUADS);
+            c.glTexCoord2f(0.1875, 0.0625);
+            c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.1875, 0);
+            c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.25, 0);
+            c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0.25, 0.0625);
+            c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+            c.glEnd();
+        }
         
         // Right
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.1875, 0.0625);
-        c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0.1875, 0);
-        c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0.25, 0);
-        c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.25, 0.0625);
-        c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
-        c.glEnd();
-        
-        // Left
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.1875, 0.0625);
-        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.1875, 0);
-        c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.25, 0);
-        c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0.25, 0.0625);
-        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
-        c.glEnd();
+        if (faces.right) {
+            c.glBegin(c.GL_QUADS);
+            c.glTexCoord2f(0.1875, 0.0625);
+            c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0.1875, 0);
+            c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0.25, 0);
+            c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.25, 0.0625);
+            c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+            c.glEnd();
+        }
         
         // Top
-        c.glColor3f(0.6, 1, 0.4);
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0, 0);
-        c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.0625, 0);
-        c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0.0625, 0.0625);
-        c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0, 0.0625);
-        c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
-        c.glEnd();
-        c.glColor3f(1, 1, 1);
+        if (faces.top) {
+            c.glColor3f(0.6, 1, 0.4);
+            c.glBegin(c.GL_QUADS);
+            c.glTexCoord2f(0, 0);
+            c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.0625, 0);
+            c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0.0625, 0.0625);
+            c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0, 0.0625);
+            c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
+            c.glEnd();
+            c.glColor3f(1, 1, 1);
+        }
         
         // Bottom
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.0625 * 2, 0.0625);
-        c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0.0625 * 2, 0);
-        c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.0625 * 3, 0);
-        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
-        c.glTexCoord2f(0.0625 * 3, 0.0625);
-        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
-        c.glEnd();
+        if (faces.bottom) {
+            c.glBegin(c.GL_QUADS);
+            c.glTexCoord2f(0.0625 * 2, 0.0625);
+            c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0.0625 * 2, 0);
+            c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.0625 * 3, 0);
+            c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.0625 * 3, 0.0625);
+            c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+            c.glEnd();
+        }
         
         // Front
-        c.glBegin(c.GL_QUADS);
-        c.glTexCoord2f(0.1875, 0.0625);
-        c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0.1875, 0);
-        c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0.25, 0);
-        c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
-        c.glTexCoord2f(0.25, 0.0625);
-        c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
-        c.glEnd();
+        if (faces.front) {
+            c.glBegin(c.GL_QUADS);
+            c.glTexCoord2f(0.1875, 0.0625);
+            c.glVertex3f(-half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0.1875, 0);
+            c.glVertex3f(-half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0.25, 0);
+            c.glVertex3f(half_size + xf * size, half_size + yf * size, -half_size + zf * size);
+            c.glTexCoord2f(0.25, 0.0625);
+            c.glVertex3f(half_size + xf * size, -half_size + yf * size, -half_size + zf * size);
+            c.glEnd();
+        }
+        
+        // Back
+        if (faces.back) {
+            c.glBegin(c.GL_QUADS);
+            c.glTexCoord2f(0.1875, 0.0625);
+            c.glVertex3f(half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.1875, 0);
+            c.glVertex3f(half_size + xf * size, half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.25, 0);
+            c.glVertex3f(-half_size + xf * size, half_size + yf * size, half_size + zf * size);
+            c.glTexCoord2f(0.25, 0.0625);
+            c.glVertex3f(-half_size + xf * size, -half_size + yf * size, half_size + zf * size);
+            c.glEnd();
+        }
     }
 };
 

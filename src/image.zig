@@ -2,7 +2,10 @@
 const c = @import("c.zig");
 
 pub const Color = packed struct {
-    r: f32, g: f32, b: f32, a: f32,
+    r: f32 = 0,
+    g: f32 = 0,
+    b: f32 = 0,
+    a: f32 = 1,
     
     pub fn bind(self: *const Color) void {
         c.glColor4f(self.r, self.g, self.b, self.a);
