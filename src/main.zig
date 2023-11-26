@@ -35,13 +35,16 @@ const World = struct {
     player: Player = .{},
     entities: std.ArrayList(?*anyopaque),
     chunks: Chunks,
+    timer: std.time.Timer,
+    delta: f64 = 0,
     
     const Chunks = std.AutoHashMap(packed struct { x: i64, z: i64 }, Chunk);
     
     fn init() World {
         var world = World {
             .entities = std.ArrayList(?*anyopaque).init(alloc),
-            .chunks = Chunks.init(alloc)
+            .chunks = Chunks.init(alloc),
+            .timer = std.time.Timer.start() catch unreachable
         };
         world.player.super.position = @Vector(3, f64) { 0, 84, 0 };
         return world;
@@ -56,6 +59,13 @@ const World = struct {
         self.player.update();
         self.generateChunks();
         self.tick += 1;
+        
+        const ns: f64 = @floatFromInt(self.timer.read());
+        const ms: f64 = ns * 0.000001;
+        self.delta = ms;
+        
+        std.debug.print("ms: {d:.6}\n", .{ ms });
+        _ = self.timer.lap();
     }
     
     fn generateChunks(self: *World) void {
@@ -385,8 +395,8 @@ const Player = struct {
         const keymap = c.SDL_GetKeyboardState(null);
         const heading = vecFromAngle(self.super.orientation.yaw);
         if (keymap[c.SDL_SCANCODE_W] == 1) {
-            self.super.position[0] += heading.x / 100;
-            self.super.position[2] += heading.y / 100;
+            self.super.position[0] += heading.x / 50;
+            self.super.position[2] += heading.y / 50;
         }
     }
 };
