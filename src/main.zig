@@ -31,30 +31,53 @@ const World = struct {
     tick: u64 = 0,
     player: Player = .{},
     entities: std.ArrayList(?*anyopaque),
-    chunk: Chunk,
+    chunks: Chunks,
+    
+    const Chunks = std.AutoHashMap(packed struct { x: i64, z: i64 }, Chunk);
     
     fn init() World {
         var alloc = std.heap.GeneralPurposeAllocator(.{}) {};
         var world = World {
             .alloc = alloc,
             .entities = std.ArrayList(?*anyopaque).init(alloc.allocator()),
-            .chunk = Chunk.generate(1, 1)
+            .chunks = Chunks.init(alloc.allocator())
         };
         world.player.super.position = @Vector(3, f64) { 0, 18, 0 };
         return world;
     }
     
     fn deinit(self: *World) void {
+        self.chunks.deinit();
         self.entities.deinit();
         _ = self.alloc.deinit();
     }
     
     fn update(self: *World) void {
         self.player.update();
+        self.generateChunks();
         self.tick += 1;
     }
     
-    fn draw(self: *World, app: *Application) void {
+    fn generateChunks(self: *World) void {
+        var xi: i64 = -2;
+        while (xi <= 2) {
+            var zi: i64 = -2;
+            while (zi <= 2) {
+                if (xi != 0 and zi != 0) {
+                    self.chunks.putNoClobber(
+                        .{ .x = xi, .z = zi },
+                        Chunk.generate(xi, zi)
+                    ) catch |err| {
+                        std.debug.print("{any}", .{ err });
+                    };
+                }
+                zi += 1;
+            }
+            xi += 1;
+        }
+    }
+    
+    fn draw(self: *const World, app: *Application) void {
         const display = app.getActualSize();
         c.glViewport(0, 0, display.width, display.height);
         
@@ -80,7 +103,10 @@ const World = struct {
             self.player.super.position[2]
         );
         
-        self.chunk.draw(1, 1);
+        var chunk_iter = self.chunks.iterator();
+        while (chunk_iter.next()) |chunk| {
+            chunk.value_ptr.draw(chunk.key_ptr.x, chunk.key_ptr.z);
+        }
         
         c.glPopMatrix();
     }
@@ -104,7 +130,7 @@ const Chunk = struct {
         return buf;
     }
     
-    fn draw(self: *Chunk, x: i64, z: i64) void {
+    fn draw(self: *const Chunk, x: i64, z: i64) void {
         for (0..16) |ix| {
             for (0..16) |iz| {
                 for (0..16) |iy| {
