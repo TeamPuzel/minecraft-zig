@@ -41,6 +41,7 @@ pub const Application = struct {
         c.glClearColor(0.0, 0.0, 0.0, 1.0);
         c.glEnable(c.GL_DEPTH_TEST);
         c.glEnable(c.GL_TEXTURE_2D);
+        c.glEnable(c.GL_CULL_FACE);
         
         return .{            
             ._window = window,

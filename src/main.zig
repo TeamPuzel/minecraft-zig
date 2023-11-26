@@ -5,7 +5,6 @@ const c = @import("c.zig");
 const terrain = @embedFile("assets/terrain.png");
 
 const noise = @import("noise.zig");
-const perlin = @import("stb_perlin.zig");
 const Application = @import("application.zig").Application;
 const Color = @import("image.zig").Color;
 
@@ -64,11 +63,20 @@ const World = struct {
         while (xi <= 5) {
             var zi: i64 = -5;
             while (zi <= 5) {
-                if (!self.chunks.contains(.{ .x = xi, .z = zi }))
+                if (!self.chunks.contains(.{ .x = xi, .z = zi })) {
                     self.chunks.putNoClobber(
                         .{ .x = xi, .z = zi },
-                        Chunk.generate(xi, zi)
+                        Chunk.generate(self, xi, zi)
                     ) catch {};
+                } else {
+                    const n = Chunk.Neighbors {
+                        .north = self.chunks.getPtr(.{ .x = xi, .z = zi + 1 }),
+                        .south = self.chunks.getPtr(.{ .x = xi, .z = zi - 1 }),
+                        .east  = self.chunks.getPtr(.{ .x = xi + 1, .z = zi }),
+                        .west  = self.chunks.getPtr(.{ .x = xi - 1, .z = zi }),
+                    };
+                    self.chunks.getPtr(.{ .x = xi, .z = zi }).?.neighbors = n;
+                }
                 zi += 1;
             }
             xi += 1;
@@ -114,9 +122,24 @@ const World = struct {
 
 const Chunk = struct {
     blocks: [16][128][16]Block = @bitCast([_]Block { .Air } ** (16 * 128 * 16)),
+    world: *World,
+    x: i64,
+    z: i64,
+    neighbors: Neighbors = .{},
     
-    fn generate(x: i64, z: i64) Chunk {
-        var buf = Chunk {};
+    const Neighbors = struct {
+        north: ?*Chunk = null,
+        south: ?*Chunk = null,
+        east: ?*Chunk = null,
+        west: ?*Chunk = null
+    };
+    
+    fn generate(world: *World, x: i64, z: i64) Chunk {
+        var buf = Chunk {
+            .world = world,
+            .x = x,
+            .z = z
+        };
         
         for (0..16) |ix| {
             for (0..16) |iz| {
@@ -132,7 +155,8 @@ const Chunk = struct {
                 
                 for (0..128) |iy| {
                     const fiy: f32 = @floatFromInt(iy);
-                    if (fiy < 160 * (height * 0.5 + 0.5)) buf.blocks[ix][iy][iz] = .Stone;
+                    if (fiy < 160 * (height * 0.5 + 0.5))
+                        buf.blocks[ix][iy][iz] = .Stone;
                 }
             }
         }
@@ -143,6 +167,8 @@ const Chunk = struct {
         for (0..16) |ix| {
             for (0..16) |iz| {
                 for (0..128) |iy| {
+                    if (!self.blocks[ix][iy][iz].isSolid()) break;
+                    
                     const ixc: i64 = @intCast(ix);
                     const iyc: i64 = @intCast(iy);
                     const izc: i64 = @intCast(iz);
@@ -170,7 +196,7 @@ const Chunk = struct {
         }
     }
     
-    fn blockAt(self: *const Chunk, position: @Vector(3, i64)) Block {
+    inline fn blockAt(self: *const Chunk, position: @Vector(3, i64)) Block {
         const ux: usize = @intCast(position[0]);
         const uy: usize = @intCast(position[1]);
         const uz: usize = @intCast(position[2]);
@@ -178,24 +204,40 @@ const Chunk = struct {
         return self.blocks[ux][uy][uz];
     }
     
-    fn isEmptyAt(self: *const Chunk, position: @Vector(3, i64)) bool {
-        if (
-            position[0] < 0 or position[0] >= 16 or
-            position[1] < 0 or position[1] >= 128 or
-            position[2] < 0 or position[2] >= 16
-        ) {
-            return true;
-        } else if (self.blockAt(position) == .Air) {
-            return true;
-        } else {
-            return false;
-        }
+    // INVARIANT: Only one coord can be out of bounds at a time
+    fn isEmptyAt(self: *const Chunk, pos: @Vector(3, i64)) bool {
+        if (pos[1] < 0 or pos[1] >= 128) return false // Y axis does not matter
+        
+        else if (pos[0] < 0) {
+            const n = self.neighbors.west orelse return false;
+            return !n.blockAt(@Vector(3, i64) { 15, pos[1], pos[2] }).isSolid();
+            
+        } else if (pos[0] >= 16) {
+            const n = self.neighbors.east orelse return false;
+            return !n.blockAt(@Vector(3, i64) { 0, pos[1], pos[2] }).isSolid();
+            
+        } else if (pos[2] < 0) {
+            const n = self.neighbors.south orelse return false;
+            return !n.blockAt(@Vector(3, i64) { pos[0], pos[1], 15 }).isSolid();
+            
+        } else if (pos[2] >= 16) {
+            const n = self.neighbors.north orelse return false;
+            return !n.blockAt(@Vector(3, i64) { pos[0], pos[1], 0 }).isSolid();
+            
+        } else return !self.blockAt(pos).isSolid();
     }
 };
 
 const Block = enum {
     Air,
     Stone,
+    
+    fn isSolid(self: *const Block) bool {
+        return switch (self.*) {
+            .Air => false,
+            else => true
+        };
+    }
     
     const Faces = packed struct {
         left: bool,
