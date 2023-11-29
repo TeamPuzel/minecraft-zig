@@ -22,11 +22,10 @@ pub fn build(b: *std.Build) void {
         // complicated build scripts, this could be a generated file.
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
-        .optimize = optimize,
-        .link_libc = true
+        .optimize = optimize
     });
+    exe.linkLibC();
     
-    // Windows linker configuration
     if (builtin.os.tag == .windows) {
         exe.addIncludePath(.{ .path = "lib/SDL2/include" });
         exe.addIncludePath(.{ .path = "lib/SDL2_image/include" });
@@ -36,14 +35,19 @@ pub fn build(b: *std.Build) void {
         
         exe.linkSystemLibrary("SDL2");
         exe.linkSystemLibrary("SDL2_image");
-        exe.linkSystemLibrary("OpenGL32");
+        // exe.linkSystemLibrary("OpenGL32");
     } else if (builtin.os.tag == .macos) {
         exe.addIncludePath(.{ .path = "/opt/homebrew/include" });
         
         exe.linkSystemLibrary("SDL2");
         exe.linkSystemLibrary("SDL2_image");
-        exe.linkFramework("OpenGL");
     }
+    exe.addIncludePath(.{ .path = "lib/glad/include" });
+    exe.addCSourceFile(.{
+        .file = .{ .path = "lib/glad/src/glad.c" },
+        .flags = &.{}
+    });
+    // exe.strip = true;
     
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

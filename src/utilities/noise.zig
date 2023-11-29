@@ -1,6 +1,6 @@
 
 /// Will return in range `-1...1`.
-/// To make it in range `0...1`, multiply by `0.5` and add `0.5`.
+/// To make it `0...1`, multiply by `0.5` and add `0.5`.
 pub fn perlin(x: f32, y: f32) f32 {
     const vec = @Vector(2, f32) { x, y };
     
@@ -37,7 +37,7 @@ inline fn randomGradient(vec: @Vector(2, i32)) @Vector(2, f32) {
     a ^= b << s | b >> w-s;
     a *%= 2048419325;
     
-    const c: u32 = 0o0;
+    const c: u32 = 0;
     const div: f32 = @floatFromInt(~(~c >> 1));
     
     const fa: f32 = @floatFromInt(a);
