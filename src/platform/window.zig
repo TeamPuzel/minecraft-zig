@@ -93,7 +93,8 @@ pub fn deinit() void {
 /// was requested to quit.
 pub fn shouldQuit() bool {
     // Update the OpenGL context dimensions.
-    c.SDL_GL_GetDrawableSize(window, &ctx_width, &ctx_height);
+    c.SDL_GL_GetDrawableSize(window, &ctx_width, &ctx_width);
+    c.glViewport(0, 0, ctx_width, ctx_width);
     
     // Check if the program should begin termination
     while (c.SDL_PollEvent(&event) > 0) {
