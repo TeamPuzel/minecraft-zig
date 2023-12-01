@@ -1,0 +1,44 @@
+
+INTRO:
+
+The program is as static as possible, however (for now) there's a few
+dynamically linked dependencies that i'd like to get rid of. Unfortunately
+platforms like macOS only provide application APIs through the Objective-C
+runtime, which I have no intention of dealing with. This would be bad enough
+had this been limited to windowing etc but even Metal is exclusively object
+oriented for reasons unknown. I will consider eventually using WebGPU, not Metal.
+
+GLAD Can easily be replaced since I don't need most of OpenGL features, so at
+some point I will switch to loading the few function pointers I need by myself.
+
+
+CHAPTER 1: Environment
+
+Thanks to the low memory requirements of used assets there is no need for a
+streaming system. In fact, all asset dependencies get embedded into the binary
+to avoid dealing with filesystem errors and their varying performance
+characteristics between operating systems.
+
+The program is divided into subsystems that (to some extent) protect their
+state, but mostly they're just there to keep code organized. They can be
+initialized in any order as long as the `platform/window` module was initialized
+first, since it's setting up the actual application window.
+
+
+CHAPTER 2: Rendering
+
+The design of the renderer is intended to be as simple as possible by
+taking advantage of the assumption the world is made out of voxels.
+
+Texture slot 0 is for terrain, 1 is for entities. Textures will be repeated
+on the x axis for various PBR properties.
+
+
+CHAPTER 3: Game state
+
+TODO!
+
+
+CHAPTER 4: Serialization
+
+TODO!

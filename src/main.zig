@@ -5,11 +5,10 @@ const window = @import("platform/window.zig");
 const shader = @import("gl/shader.zig");
 const texture = @import("gl/texture.zig");
 
-const BlockVertexBuffer = @import("gl/buffer.zig").BlockVertexBuffer;
-const BlockVertex = @import("gl/buffer.zig").BlockVertex;
-const Color = @import("gl/buffer.zig").Color;
-const Position = @import("gl/buffer.zig").Position;
-const TextureCoord = @import("gl/buffer.zig").TextureCoord;
+const TerrainVertexBuffer = @import("gl/buffer.zig").TerrainVertexBuffer;
+const Vertex = TerrainVertexBuffer.Vertex;
+
+comptime { @setFloatMode(.Optimized); }
 
 // const World = @import("world/world.zig").World;
 // const Block = @import("world/block.zig").Block;
@@ -28,13 +27,13 @@ pub fn main() !void {
     try texture.init();
     defer texture.deinit();
     
-    window.lockCursor(true);
+    window.lockCursor(false);
     
     // MARK: - Test ------------------------------------------------------------
     shader.terrain.bind();
     texture.terrain.bind();
     
-    var test_rect = BlockVertexBuffer.create(std.heap.c_allocator);
+    var test_rect = TerrainVertexBuffer.create(std.heap.c_allocator);
     defer test_rect.destroy();
     
     try test_rect.vertices.appendSlice(&.{

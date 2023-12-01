@@ -55,7 +55,7 @@ pub const World = packed struct {
 /// The key for chunk storage.
 pub const ChunkPosition = packed struct { x: i64, z: i64 };
 
-/// Stores pointers to all "loaded" chunks,
+/// Stores pointers to all loaded chunks,
 /// that is, chunks within render distance.
 pub const ChunkCache = packed struct {
     /// A pointer to where the 2d pointer array is allocated.

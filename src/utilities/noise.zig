@@ -1,3 +1,4 @@
+//! This module contains various noise functions for terrain generation.
 
 /// Will return in range `-1...1`.
 /// To make it `0...1`, multiply by `0.5` and add `0.5`.

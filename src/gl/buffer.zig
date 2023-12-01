@@ -3,37 +3,45 @@
 const std = @import("std");
 const c = @import("../platform/c.zig");
 
-pub const Position = packed struct {
-    x: f32, y: f32, z: f32
-};
-
-pub const Color = packed struct {
-    r: f32 = 0,
-    g: f32 = 0,
-    b: f32 = 0,
-    a: f32 = 1,
-    
-    pub const white = Color { .r = 1, .g = 1, .b = 1, .a = 1 };
-    pub const black = Color { .r = 1, .g = 1, .b = 1, .a = 1 };
-};
-
-pub const TextureCoord = packed struct {
-    u: f32, v: f32
-};
-
-pub const BlockVertex = packed struct {
-    position: Position,
-    tex_coord: TextureCoord,
-    color: Color = Color.white
-};
-
-pub const BlockVertexBuffer = struct {
+pub const TerrainVertexBuffer = struct {
     id: u32,
-    vertices: std.ArrayList(BlockVertex),
+    vertices: std.ArrayList(Vertex),
     
-    pub fn create(allocator: std.mem.Allocator) BlockVertexBuffer {
-        var buf: BlockVertexBuffer = undefined;
-        buf.vertices = std.ArrayList(BlockVertex).init(allocator);
+    pub const Vertex = packed struct {
+        position: Position,
+        tex_coord: TextureCoord,
+        color: Color = Color.white,
+        
+        pub const Position = packed struct {
+            x: f32, y: f32, z: f32
+        };
+
+        pub const Color = packed struct {
+            r: f32 = 0,
+            g: f32 = 0,
+            b: f32 = 0,
+            a: f32 = 1,
+            
+            pub const white = Color { .r = 1, .g = 1, .b = 1, .a = 1 };
+            pub const black = Color { .r = 1, .g = 1, .b = 1, .a = 1 };
+        };
+
+        pub const TextureCoord = packed struct {
+            u: f32, v: f32
+        };
+        
+        pub fn init(x: f32, y: f32, z: f32, u: f32, v: f32, r: f32, g: f32, b: f32, a: f32) Vertex {
+            return .{
+                .position = .{ .x = x, .y = y, .z = z },
+                .tex_coord = .{ .u = u, .v = v },
+                .color = .{ .r = r, .g = g, .b = b, .a = a }
+            };
+        }
+    };
+    
+    pub fn create(allocator: std.mem.Allocator) TerrainVertexBuffer {
+        var buf: TerrainVertexBuffer = undefined;
+        buf.vertices = std.ArrayList(Vertex).init(allocator);
         c.glGenBuffers(1, &buf.id);
         
         buf.bind();
@@ -41,26 +49,26 @@ pub const BlockVertexBuffer = struct {
         return buf;
     }
     
-    pub fn destroy(self: *BlockVertexBuffer) void {
+    pub fn destroy(self: *TerrainVertexBuffer) void {
         c.glDeleteBuffers(1, &self.id);
         self.vertices.deinit();
     }
     
-    pub fn sync(self: *const BlockVertexBuffer) void {
+    pub fn sync(self: *const TerrainVertexBuffer) void {
         self.bind();
         c.glBufferData(
             c.GL_ARRAY_BUFFER,
-            @intCast(self.vertices.items.len * @sizeOf(BlockVertex)),
+            @intCast(self.vertices.items.len * @sizeOf(Vertex)),
             self.vertices.items.ptr,
             c.GL_DYNAMIC_DRAW
         );
     }
     
-    pub fn bind(self: *const BlockVertexBuffer) void {
+    pub fn bind(self: *const TerrainVertexBuffer) void {
         c.glBindBuffer(c.GL_ARRAY_BUFFER, self.id);
     }
     
-    pub fn draw(self: *const BlockVertexBuffer) void {
+    pub fn draw(self: *const TerrainVertexBuffer) void {
         c.glDrawArrays(c.GL_TRIANGLES, 0, @intCast(self.vertices.items.len));
     }
     
@@ -68,15 +76,15 @@ pub const BlockVertexBuffer = struct {
     //     c.glDrawArrays(c.GL_LINES, 0, @intCast(self.vertices.items.len));
     // }
     
-    fn layout(self: *const BlockVertexBuffer) void {
+    fn layout(self: *const TerrainVertexBuffer) void {
         _ = self;
         c.glVertexAttribPointer(
             0,
             3,
             c.GL_FLOAT,
             c.GL_FALSE,
-            @sizeOf(BlockVertex),
-            @ptrFromInt(@offsetOf(BlockVertex, "position"))
+            @sizeOf(Vertex),
+            @ptrFromInt(@offsetOf(Vertex, "position"))
         );
         c.glEnableVertexAttribArray(0);
         
@@ -85,8 +93,8 @@ pub const BlockVertexBuffer = struct {
             2,
             c.GL_FLOAT,
             c.GL_FALSE,
-            @sizeOf(BlockVertex),
-            @ptrFromInt(@offsetOf(BlockVertex, "tex_coord"))
+            @sizeOf(Vertex),
+            @ptrFromInt(@offsetOf(Vertex, "tex_coord"))
         );
         c.glEnableVertexAttribArray(1);
         
@@ -95,8 +103,8 @@ pub const BlockVertexBuffer = struct {
             4,
             c.GL_FLOAT,
             c.GL_FALSE,
-            @sizeOf(BlockVertex),
-            @ptrFromInt(@offsetOf(BlockVertex, "color"))
+            @sizeOf(Vertex),
+            @ptrFromInt(@offsetOf(Vertex, "color"))
         );
         c.glEnableVertexAttribArray(2);
     }
