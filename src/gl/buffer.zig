@@ -3,6 +3,11 @@
 const std = @import("std");
 const c = @import("../platform/c.zig");
 
+/// A vertex buffer optimized for caching terrain on the gpu and only
+/// synchronizing all changes at once when needed.
+/// 
+/// It could potentially be optimized further by only sending updated vertices,
+/// however, that would probably be overkill.
 pub const TerrainVertexBuffer = struct {
     id: u32,
     vertices: std.ArrayList(Vertex),
@@ -54,6 +59,7 @@ pub const TerrainVertexBuffer = struct {
         self.vertices.deinit();
     }
     
+    /// Update the buffer on the GPU side with the local CPU data.
     pub fn sync(self: *const TerrainVertexBuffer) void {
         self.bind();
         c.glBufferData(

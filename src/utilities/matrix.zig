@@ -2,7 +2,7 @@
 const std = @import("std");
 
 pub const Matrix4x4 = extern struct {
-    data: [4][4]f32,
+    data: [4][4]f32 = @bitCast([_]f32 { 0 } ** (4 * 4)),
     
     /// Performs a SIMD multiplication of two matrices.
     pub inline fn mul(
@@ -37,6 +37,84 @@ pub const Matrix4x4 = extern struct {
         const m1: @Vector(16, f32) = @bitCast(self.*);
         const m2: @Vector(16, f32) = @bitCast(other.*);
         return @reduce(.And, m1 == m2);
+    }
+    
+    pub const Rotation = enum { Yaw, Pitch, Roll };
+    
+    pub fn rotation(comptime axis: Rotation, angle: f32) Matrix4x4 {
+        const a = std.math.degreesToRadians(f32, angle);
+        return switch (axis) {
+            .Pitch => .{ .data = .{
+                .{ 1, 0, 0, 0 },
+                .{ 0, @cos(a), -@sin(a), 0 },
+                .{ 0, @sin(a), @cos(a), 0 },
+                .{ 0, 0, 0, 1 }
+            }},
+            .Yaw => .{ .data = .{
+                .{ @cos(a), 0, @sin(a), 0 },
+                .{ 0, 1, 0, 0 },
+                .{ -@sin(a), 0, @cos(a), 0 },
+                .{ 0, 0, 0, 1 }
+            }},
+            .Roll => .{ .data = .{
+                .{ @cos(a), -@sin(a), 0, 0 },
+                .{ @sin(a), @cos(a), 0, 0 },
+                .{ 0, 0, 1, 0 },
+                .{ 0, 0, 0, 1 }
+            }},
+        };
+    }
+    
+    pub fn translation(x: f32, y: f32, z: f32) Matrix4x4 {
+        return .{ .data = .{
+            .{ 1, 0, 0, 0 },
+            .{ 0, 1, 0, 0 },
+            .{ 0, 0, 1, 0 },
+            .{ x, y, z, 1 }
+        }};
+    }
+    
+    pub fn scaling(x: f32, y: f32, z: f32) Matrix4x4 {
+        return .{ .data = .{
+            .{ x, 0, 0, 0 },
+            .{ 0, y, 0, 0 },
+            .{ 0, 0, z, 0 },
+            .{ 0, 0, 0, 1 }
+        }};
+    }
+    
+    pub fn projection(w: f32, h: f32, fov: f32, near: f32, far: f32) Matrix4x4 {
+        const aspect = w / h;
+        const q = far / (far - near);
+        const f = 1 / @tan(fov / 2);
+        return .{ .data = .{
+            .{ aspect * f, 0, 0, 0 },
+            .{ 0, f, 0, 0 },
+            .{ 0, 0, q, 1 },
+            .{ 0, 0, -near * q, 0 }
+        }};
+    }
+    
+    pub fn frustum(l: f32, r: f32, top: f32, bottom: f32, near: f32, far: f32) Matrix4x4 {
+        const a = (r + l) / (r - l);
+        const b = (top + bottom) / (top - bottom);
+        const c = -((far + near) / (far - near));
+        const d = -(2 * far * near / (far - near));
+        return .{ .data = .{
+            .{ 2 * near / (r - l), 0, a, 0 },
+            .{ 0, 2 * near / (top - bottom), b, 0 },
+            .{ 0, 0, c, d },
+            .{ 0, 0, -1, 0 }
+        }};
+    }
+    
+    pub fn identity() Matrix4x4 {
+        return .{ .data = .{
+            .{ 1, 0, 0, 0 },
+            .{ 0, 1, 0, 0 },
+            .{ 0, 0, 1, 0 },
+            .{ 0, 0, 0, 1 }
+        }};
     }
 };
 

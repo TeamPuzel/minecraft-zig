@@ -7,11 +7,10 @@ const texture = @import("gl/texture.zig");
 
 const TerrainVertexBuffer = @import("gl/buffer.zig").TerrainVertexBuffer;
 const Vertex = TerrainVertexBuffer.Vertex;
-
-comptime { @setFloatMode(.Optimized); }
+const Matrix4x4 = @import("utilities/matrix.zig").Matrix4x4;
 
 // const World = @import("world/world.zig").World;
-// const Block = @import("world/block.zig").Block;
+const Block = @import("world/block.zig").Block;
 
 pub fn main() !void {
     // The window module sets up an SDL window and the OpenGL context
@@ -33,32 +32,36 @@ pub fn main() !void {
     shader.terrain.bind();
     texture.terrain.bind();
     
-    var test_rect = TerrainVertexBuffer.create(std.heap.c_allocator);
-    defer test_rect.destroy();
+    var test_block = TerrainVertexBuffer.create(std.heap.c_allocator);
+    defer test_block.destroy();
     
-    try test_rect.vertices.appendSlice(&.{
-        .{ .position = .{ .x = -0.5, .y =  0.5, .z = 0 }, .tex_coord = .{ .u = 0, .v = 0 } },
-        .{ .position = .{ .x = -0.5, .y = -0.5, .z = 0 }, .tex_coord = .{ .u = 0, .v = 1 } },
-        .{ .position = .{ .x =  0.5, .y =  0.5, .z = 0 }, .tex_coord = .{ .u = 1, .v = 0 } },
-        .{ .position = .{ .x =  0.5, .y =  0.5, .z = 0 }, .tex_coord = .{ .u = 1, .v = 0 } },
-        .{ .position = .{ .x = -0.5, .y = -0.5, .z = 0 }, .tex_coord = .{ .u = 0, .v = 1 } },
-        .{ .position = .{ .x =  0.5, .y = -0.5, .z = 0 }, .tex_coord = .{ .u = 1, .v = 1 } }
-    });
-    test_rect.sync();
+    try Block.dirt.mesh(.{}, &test_block);
+    test_block.sync();
     
     // c.glActiveTexture(c.GL_TEXTURE0);
     const sampler = shader.terrain.getUniform("texture_id");
+    const transform = shader.terrain.getUniform("transform");
     c.glUniform1i(sampler, 0);
     
-    // END: - Test -------------------------------------------------------------
+    var t: f32 = 0;
     
     // Keep running until the program is requested to quit
-    while (!window.shouldQuit()) {
-        
+    while (window.update()) {
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
         
-        test_rect.draw();
+        const width: f32 = @floatFromInt(window.actual_width);
+        const height: f32 = @floatFromInt(window.actual_height);
+        const aspect = width / height;
         
+        const mat = Matrix4x4.rotation(.Yaw, 45)
+            .mul(&Matrix4x4.translation(0, 0, -3))
+            .mul(&Matrix4x4.frustum(-aspect / 2, aspect / 2, -0.5, 0.5, 0.4, 1000));
+            // .mul(&Matrix4x4.projection(width, height, 90, 0.01, 1000));
+        
+        c.glUniformMatrix4fv(transform, 1, c.GL_TRUE, @ptrCast(&mat.data));
+        
+        test_block.draw();
+        t += 1;
         window.swapBuffers();
     }
 }

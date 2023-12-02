@@ -3,16 +3,16 @@
 const std = @import("std");
 const c = @import("c.zig");
 
-pub const window_name = "Minecraft";
-pub const window_width = 800;
-pub const window_height = 600;
+pub const name = "Minecraft";
+const initial_width = 800;
+const initial_height = 600;
 
-var window: *c.SDL_Window = undefined;
-var context: c.SDL_GLContext = undefined;
+threadlocal var window: *c.SDL_Window = undefined;
+threadlocal var context: c.SDL_GLContext = undefined;
 var event: c.SDL_Event = undefined;
 
-pub var ctx_width: i32 = 0;
-pub var ctx_height: i32 = 0;
+pub var actual_width: i32 = 0;
+pub var actual_height: i32 = 0;
 
 /// Sets up all critical global and external state required to support
 /// OpenGL rendering.
@@ -24,11 +24,11 @@ pub fn init() !void {
     
     // Create the window
     window = c.SDL_CreateWindow(
-        window_name,
+        name,
         c.SDL_WINDOWPOS_UNDEFINED,
         c.SDL_WINDOWPOS_UNDEFINED,
-        window_width,
-        window_height,
+        initial_width,
+        initial_height,
         c.SDL_WINDOW_ALLOW_HIGHDPI |
         c.SDL_WINDOW_OPENGL |
         c.SDL_WINDOW_ALWAYS_ON_TOP |
@@ -37,7 +37,7 @@ pub fn init() !void {
     
     // Generic SDL settings
     // _ = c.SDL_SetRelativeMouseMode(1);
-    _ = c.SDL_SetWindowMinimumSize(window, window_width, window_height);
+    _ = c.SDL_SetWindowMinimumSize(window, initial_width, initial_height);
     
     // Configure the OpenGL context
     _ = c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -90,20 +90,20 @@ pub fn deinit() void {
 }
 
 /// Updates all window state and returns true if the application
-/// was requested to quit.
-pub fn shouldQuit() bool {
+/// was not requested to quit.
+pub fn update() bool {
     // Update the OpenGL context dimensions.
-    c.SDL_GL_GetDrawableSize(window, &ctx_width, &ctx_width);
-    c.glViewport(0, 0, ctx_width, ctx_width);
+    c.SDL_GL_GetDrawableSize(window, &actual_width, &actual_height);
+    // c.glViewport(0, 0, actual_width, actual_width);
     
     // Check if the program should begin termination
     while (c.SDL_PollEvent(&event) > 0) {
         switch (event.type) {
-            c.SDL_QUIT => return true,
+            c.SDL_QUIT => return false,
             else => break
         }
     }
-    return false;
+    return true;
 }
 
 pub fn lockCursor(value: bool) void {

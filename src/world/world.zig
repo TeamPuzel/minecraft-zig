@@ -2,16 +2,9 @@
 const std = @import("std");
 const Chunk = @import("chunk.zig").Chunk;
 
-pub const World = packed struct {
-    chunk_cache: ChunkCache,
+pub const World = struct {
+    // chunk_cache: ChunkCache,
     chunks: std.AutoHashMap(ChunkPosition, Chunk),
-    time: u64 = 0,
-    season: Season = .Spring,
-    name: []const u8,
-    
-    pub const Season = enum {
-        Spring, Summer, Autumn, Winter
-    };
     
     pub fn generate(name: []const u8) World {
         
@@ -30,14 +23,16 @@ pub const World = packed struct {
         unreachable;
     }
     
+    // MARK: - Serialization ---------------------------------------------------
+    
     /// Load the world from the world folder.
-    pub fn load(name: []const u8) LoadError!World {
+    pub fn loadFromFile(name: []const u8) LoadError!World {
         _ = name;
         unreachable;
     }
     
     /// Save the world to the world folder.
-    pub fn save(self: *const World) SaveError!void {
+    pub fn saveToFile(self: *const World) SaveError!void {
         _ = self;
         unreachable;
     }
