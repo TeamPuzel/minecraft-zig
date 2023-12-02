@@ -10,8 +10,7 @@ pub const chunk_height = 256;
 
 pub const Chunk = struct {
     /// A large chunk of memory storing block pointers.
-    blocks: [chunk_side][chunk_height][chunk_side]*const Block = 
-        @bitCast([_] Block { &Block.air } ** (chunk_side * chunk_height * chunk_side)),
+    blocks: [chunk_side][chunk_height][chunk_side]*const Block,
     
     /// If not `null` the chunk is loaded
     mesh: ?TerrainVertexBuffer,
@@ -24,15 +23,20 @@ pub const Chunk = struct {
     /// chunk is loaded for rendering purposes check `mesh` instead, as
     /// it can be used to cull faces more efficiently at chunk boundaries.
     neighbors: packed struct {
-        north: ?*Chunk,
-        south: ?*Chunk,
-        east:  ?*Chunk,
-        west:  ?*Chunk
+        north: ?*Chunk = null,
+        south: ?*Chunk = null,
+        east:  ?*Chunk = null,
+        west:  ?*Chunk = null
     },
     
-    pub fn generate(x: i32, z: i32) Chunk {
+    pub fn generate(x: i32, z: i32) !Chunk {
         var buf = Chunk {
-            .mesh = TerrainVertexBuffer.create(std.heap.c_allocator)
+            .mesh = TerrainVertexBuffer.create(std.heap.c_allocator),
+            .blocks = @bitCast(
+                [_] *const Block { &Block.air } ** 
+                    (chunk_side * chunk_height * chunk_side)
+            ),
+            .neighbors = .{}
         };
         
         _ = x; _ = z;
@@ -45,13 +49,13 @@ pub const Chunk = struct {
             }
         }
         
-        buf.remesh();
+        try buf.remesh();
         
         return buf;
     }
     
     pub fn destroy(self: *Chunk) void {
-        if (self.mesh) |mesh| mesh.destroy();
+        if (self.mesh) |_| self.mesh.?.destroy();
     }
     
     pub fn load(self: *Chunk) void {
@@ -70,8 +74,12 @@ pub const Chunk = struct {
         for (self.blocks, 0..) |horiz, ix| {
             for (horiz, 0..) |vert, iy| {
                 for (vert, 0..) |block, iz| {
-                    _ = ix; _ = iy; _ = iz; // TODO: Cull faces
-                    try block.mesh(.{}, &self.mesh.?);
+                    
+                    const fx: f32 = @floatFromInt(ix);
+                    const fy: f32 = @floatFromInt(iy);
+                    const fz: f32 = @floatFromInt(iz);
+                    
+                    try block.mesh(.{}, fx, fy, fz, &self.mesh.?);
                 }
             }
         }

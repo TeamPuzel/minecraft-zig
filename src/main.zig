@@ -11,6 +11,7 @@ const Matrix4x4 = @import("utilities/matrix.zig").Matrix4x4;
 
 // const World = @import("world/world.zig").World;
 const Block = @import("world/block.zig").Block;
+const Chunk = @import("world/chunk.zig").Chunk;
 
 pub fn main() !void {
     // The window module sets up an SDL window and the OpenGL context
@@ -35,7 +36,7 @@ pub fn main() !void {
     var test_block = TerrainVertexBuffer.create(std.heap.c_allocator);
     defer test_block.destroy();
     
-    try Block.dirt.mesh(.{}, &test_block);
+    try Block.dirt.mesh(.{}, 0, 0, 0, &test_block);
     test_block.sync();
     
     // c.glActiveTexture(c.GL_TEXTURE0);
@@ -53,8 +54,8 @@ pub fn main() !void {
         const height: f32 = @floatFromInt(window.actual_height);
         const aspect = width / height;
         
-        const mat = Matrix4x4.rotation(.Yaw, 45)
-            .mul(&Matrix4x4.translation(0, 0, -3))
+        const mat = Matrix4x4.rotation(.Yaw, t / 100)
+            .mul(&Matrix4x4.translation(0, 0, -2))
             .mul(&Matrix4x4.frustum(-aspect / 2, aspect / 2, -0.5, 0.5, 0.4, 1000));
             // .mul(&Matrix4x4.projection(width, height, 90, 0.01, 1000));
         

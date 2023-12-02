@@ -61,76 +61,78 @@ pub const Block = struct {
     /// A coefficient for converting block coordinates to uv coordinates.
     pub const tex_uvc = tex_block_size / tex_side_len;
     
-    pub fn mesh(self: *const Block, faces: Faces, buffer: *TerrainVertexBuffer) !void {
+    pub fn mesh(self: *const Block, faces: Faces, x: f32, y: f32, z: f32, buffer: *TerrainVertexBuffer) !void {
         const off = self.atlas_offsets orelse return; // Abort if not drawable
         
-        const s = half_side; // Use shorter names for better readability
+        const sx = half_side + x;
+        const sy = half_side + y;
+        const sz = half_side + z;
         const c = tex_uvc;
         
         // Front
         if (faces.front) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init( s,  s, -s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s,  s, -s,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init(-s, -s, -s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s,  s, -s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s, -s, -s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s, -s, -s,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init( sx,  sy, -sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init(-sx,  sy, -sz,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
+                Vertex.init(-sx, -sy, -sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( sx,  sy, -sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init(-sx, -sy, -sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( sx, -sy, -sz,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
             });
         }
         // Back
         if (faces.back) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init(-s,  s,  s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s,  s,  s,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init( s, -s,  s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s,  s,  s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s, -s,  s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s, -s,  s,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init(-sx,  sy,  sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init( sx,  sy,  sz,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
+                Vertex.init( sx, -sy,  sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-sx,  sy,  sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init( sx, -sy,  sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-sx, -sy,  sz,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
             });
         }
         // Left
         if (faces.left) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init(-s,  s, -s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s,  s,  s,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init(-s, -s,  s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s,  s, -s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s, -s,  s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s, -s, -s,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init(-sx,  sy, -sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init(-sx,  sy,  sz,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
+                Vertex.init(-sx, -sy,  sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-sx,  sy, -sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init(-sx, -sy,  sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-sx, -sy, -sz,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
             });
         }
         // Right
         if (faces.right) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init( s,  s,  s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s,  s, -s,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init( s, -s, -s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s,  s,  s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s, -s, -s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s, -s,  s,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init( sx,  sy,  sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init( sx,  sy, -sz,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
+                Vertex.init( sx, -sy, -sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( sx,  sy,  sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init( sx, -sy, -sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( sx, -sy,  sz,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
             });
         }
         // Top
         if (faces.top) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init( s,  s,  s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s,  s,  s,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init(-s,  s, -s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s,  s,  s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s,  s, -s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s,  s, -s,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init( sx,  sy,  sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init(-sx,  sy,  sz,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
+                Vertex.init(-sx,  sy, -sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( sx,  sy,  sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init(-sx,  sy, -sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( sx,  sy, -sz,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
             });
         }
         // Bottom
         if (faces.bottom) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init( s, -s, -s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s, -s,  s,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init(-s, -s,  s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s, -s, -s,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s, -s,  s,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s, -s, -s,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init( sx, -sy, -sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init( sx, -sy,  sz,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
+                Vertex.init(-sx, -sy,  sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( sx, -sy, -sz,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
+                Vertex.init(-sx, -sy,  sz,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-sx, -sy, -sz,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
             });
         }
     }
