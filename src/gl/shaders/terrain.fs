@@ -8,5 +8,5 @@ uniform sampler2D texture_id;
 out vec4 out_color;
 
 void main() {
-    out_color = texture(texture_id, vertex_uv);
+    out_color = texture(texture_id, vertex_uv) * vertex_color;
 }

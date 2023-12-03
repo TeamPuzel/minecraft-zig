@@ -21,6 +21,8 @@ pub fn main() !void {
     var world = try World.generate();
     defer world.deinit();
     
+    c.glClearColor(0.6, 0.8, 0.9, 1.0);
+    
     while (window.update()) {
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
         world.update();

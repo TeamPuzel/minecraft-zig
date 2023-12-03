@@ -21,7 +21,7 @@ pub const Entity = extern struct {
 
 pub const Player = extern struct {
     super: Entity = .{
-        .position = .{ .y = 130 },
+        .position = .{ .y = 80 },
         .update = @ptrCast(&update)
     },
     
@@ -41,13 +41,11 @@ pub const Player = extern struct {
             
         // Basic movement
         const keymap = c.SDL_GetKeyboardState(null);
-        if (keymap[c.SDL_SCANCODE_W] == 1) self.super.position.z      += 0.001;
-        if (keymap[c.SDL_SCANCODE_A] == 1) self.super.position.x      -= 0.001;
-        if (keymap[c.SDL_SCANCODE_S] == 1) self.super.position.z      -= 0.001;
-        if (keymap[c.SDL_SCANCODE_D] == 1) self.super.position.x      += 0.001;
-        if (keymap[c.SDL_SCANCODE_SPACE] == 1) self.super.position.y  += 0.001;
-        if (keymap[c.SDL_SCANCODE_LSHIFT] == 1) self.super.position.y -= 0.001;
-            
-        _ = world;
+        if (keymap[c.SDL_SCANCODE_W] == 1) self.super.position.z      += 0.01 * world.delta;
+        if (keymap[c.SDL_SCANCODE_A] == 1) self.super.position.x      -= 0.01 * world.delta;
+        if (keymap[c.SDL_SCANCODE_S] == 1) self.super.position.z      -= 0.01 * world.delta;
+        if (keymap[c.SDL_SCANCODE_D] == 1) self.super.position.x      += 0.01 * world.delta;
+        if (keymap[c.SDL_SCANCODE_SPACE] == 1) self.super.position.y  += 0.01 * world.delta;
+        if (keymap[c.SDL_SCANCODE_LSHIFT] == 1) self.super.position.y -= 0.01 * world.delta;
     }
 };

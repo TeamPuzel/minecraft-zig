@@ -16,10 +16,15 @@ pub const Block = struct {
     /// Not present for invisible blocks.
     atlas_offsets: ?AtlasOffsets = null,
     
+    is_transparent: bool = false,
+    
     pub const Tag = enum (u16) {
         Air,
         Stone,
-        Dirt
+        Dirt,
+        Grass,
+        Water,
+        Sand
     };
     
     pub const Properties = packed struct {
@@ -41,12 +46,12 @@ pub const Block = struct {
     
     /// A mask used to communicate which faces need to be meshed.
     pub const Faces = packed struct {
-        front:  bool = true,
-        back:   bool = true,
-        left:   bool = true,
-        right:  bool = true,
-        top:    bool = true,
-        bottom: bool = true
+        north: bool,
+        south: bool,
+        east:  bool,
+        west:  bool,
+        up:    bool,
+        down:  bool
     };
     
     /// The length of a block side.
@@ -67,8 +72,19 @@ pub const Block = struct {
         const s = half_side;
         const c = tex_uvc;
         
+        // Back
+        if (faces.north) {
+            try buffer.vertices.appendSlice(&.{
+                Vertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       1, 1, 1, 1), // TR
+                Vertex.init( s + x,  s + y,  s + z,   c * off.back.x,     c * off.back.y,       1, 1, 1, 1), // TL
+                Vertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       1, 1, 1, 1), // TR
+                Vertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-s + x, -s + y,  s + z,   c * off.back.x + c, c * off.back.y + c,   1, 1, 1, 1)  // BR
+            });
+        }
         // Front
-        if (faces.front) {
+        if (faces.south) {
             try buffer.vertices.appendSlice(&.{
                 Vertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
                 Vertex.init(-s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
@@ -78,59 +94,48 @@ pub const Block = struct {
                 Vertex.init( s + x, -s + y, -s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
             });
         }
-        // Back
-        if (faces.back) {
+        // Right
+        if (faces.east) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init(-s + x,  s + y,  s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s + x,  s + y,  s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init( s + x, -s + y,  s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s + x,  s + y,  s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s + x, -s + y,  s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       1, 1, 1, 1), // TR
+                Vertex.init( s + x,  s + y, -s + z,   c * off.right.x,     c * off.right.y,       1, 1, 1, 1), // TL
+                Vertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       1, 1, 1, 1), // TR
+                Vertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( s + x, -s + y,  s + z,   c * off.right.x + c, c * off.right.y + c,   1, 1, 1, 1)  // BR
             });
         }
         // Left
-        if (faces.left) {
+        if (faces.west) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s + x,  s + y,  s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init(-s + x, -s + y, -s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
-            });
-        }
-        // Right
-        if (faces.right) {
-            try buffer.vertices.appendSlice(&.{
-                Vertex.init( s + x,  s + y,  s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init( s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s + x,  s + y,  s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init( s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s + x, -s + y,  s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       1, 1, 1, 1), // TR
+                Vertex.init(-s + x,  s + y,  s + z,   c * off.left.x,     c * off.left.y,       1, 1, 1, 1), // TL
+                Vertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       1, 1, 1, 1), // TR
+                Vertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   1, 1, 1, 1), // BL
+                Vertex.init(-s + x, -s + y, -s + z,   c * off.left.x + c, c * off.left.y + c,   1, 1, 1, 1)  // BR
             });
         }
         // Top
-        if (faces.top) {
+        if (faces.up) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init( s + x,  s + y,  s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s + x,  s + y,  s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s + x,  s + y,  s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       1, 1, 1, 1), // TR
+                Vertex.init(-s + x,  s + y,  s + z,   c * off.top.x,     c * off.top.y,       1, 1, 1, 1), // TL
+                Vertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       1, 1, 1, 1), // TR
+                Vertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( s + x,  s + y, -s + z,   c * off.top.x + c, c * off.top.y + c,   1, 1, 1, 1)  // BR
             });
         }
         // Bottom
-        if (faces.bottom) {
+        if (faces.down) {
             try buffer.vertices.appendSlice(&.{
-                Vertex.init( s + x, -s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, 1), // TL
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s + x, -s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, 1), // TR
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, 1), // BL
-                Vertex.init( s + x, -s + y,  s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, 1)  // BR
+                Vertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       1, 1, 1, 1), // TR
+                Vertex.init(-s + x, -s + y, -s + z,   c * off.bottom.x,     c * off.bottom.y,       1, 1, 1, 1), // TL
+                Vertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       1, 1, 1, 1), // TR
+                Vertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   1, 1, 1, 1), // BL
+                Vertex.init( s + x, -s + y,  s + z,   c * off.bottom.x + c, c * off.bottom.y + c,   1, 1, 1, 1)  // BR
             });
         }
     }
@@ -139,7 +144,8 @@ pub const Block = struct {
     
     /// This special block represents the absence of a block.
     pub const air = Block {
-        .tag = .Air
+        .tag = .Air,
+        .is_transparent = true
     };
     
     /// A generic underground stone block.
@@ -155,7 +161,6 @@ pub const Block = struct {
         }
     };
     
-    /// A generic underground stone block.
     pub const dirt = Block {
         .tag = .Dirt,
         .atlas_offsets = .{
@@ -165,6 +170,42 @@ pub const Block = struct {
             .right  = .{ .x = 2, .y = 0 },
             .top    = .{ .x = 2, .y = 0 },
             .bottom = .{ .x = 2, .y = 0 }
+        }
+    };
+    
+    pub const grass = Block {
+        .tag = .Grass,
+        .atlas_offsets = .{
+            .front  = .{ .x = 3, .y = 0 },
+            .back   = .{ .x = 3, .y = 0 },
+            .left   = .{ .x = 3, .y = 0 },
+            .right  = .{ .x = 3, .y = 0 },
+            .top    = .{ .x = 0, .y = 0 },
+            .bottom = .{ .x = 2, .y = 0 }
+        }
+    };
+    
+    pub const sand = Block {
+        .tag = .Dirt,
+        .atlas_offsets = .{
+            .front  = .{ .x = 2, .y = 1 },
+            .back   = .{ .x = 2, .y = 1 },
+            .left   = .{ .x = 2, .y = 1 },
+            .right  = .{ .x = 2, .y = 1 },
+            .top    = .{ .x = 2, .y = 1 },
+            .bottom = .{ .x = 2, .y = 1 }
+        }
+    };
+    
+    pub const water = Block {
+        .tag = .Water,
+        .atlas_offsets = .{
+            .front  = .{ .x = 13, .y = 12 },
+            .back   = .{ .x = 13, .y = 12 },
+            .left   = .{ .x = 13, .y = 12 },
+            .right  = .{ .x = 13, .y = 12 },
+            .top    = .{ .x = 13, .y = 12 },
+            .bottom = .{ .x = 13, .y = 12 }
         }
     };
 };

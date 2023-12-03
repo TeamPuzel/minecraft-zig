@@ -9,10 +9,14 @@ const Player = @import("entity.zig").Player;
 const TerrainVertexBuffer = @import("../gl/buffer.zig").TerrainVertexBuffer;
 const Block = @import("block.zig").Block;
 
+const render_distance = 8;
+
 pub const World = struct {
     chunks: ChunkStorage,
     player: Player,
     mesh: TerrainVertexBuffer,
+    timer: std.time.Timer,
+    delta: f32 = 0,
     
     pub const ChunkStorage = std.AutoArrayHashMap(ChunkPosition, Chunk);
     
@@ -20,18 +24,19 @@ pub const World = struct {
         var buf = World {
             .chunks = ChunkStorage.init(std.heap.c_allocator),
             .mesh = TerrainVertexBuffer.create(std.heap.c_allocator),
-            .player = .{}
+            .player = .{},
+            .timer = undefined
         };
         
-        var ix: i32 = -2;
-        while (ix <= 2) : (ix += 1) {
-            var iz: i32 = -2;
-            while (iz <= 2) : (iz += 1) {
+        var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
+            var iz: i32 = -render_distance; while (iz <= render_distance) : (iz += 1) {
                 try buf.chunks.put(.{ .x = ix, .z = iz }, try Chunk.generate(ix, iz));
             }
         }
         
         try buf.remesh();
+        
+        buf.timer = try std.time.Timer.start();
         
         return buf;
     }
@@ -42,7 +47,14 @@ pub const World = struct {
     }
     
     pub fn update(self: *World) void {
+        const ns: f64 = @floatFromInt(self.timer.read());
+        const ms: f64 = ns * 0.000001;
+        self.delta = @floatCast(ms);
+        std.log.info("ms: {d:.6}\n", .{ ms });
+        
         self.player.super.update(&self.player, self);
+        
+        _ = self.timer.lap();
     }
     
     fn remesh(self: *World) !void {
@@ -73,18 +85,18 @@ pub const World = struct {
 /// The key for chunk storage.
 pub const ChunkPosition = packed struct { x: i32, z: i32 };
 
-/// Stores pointers to all loaded chunks,
-/// that is, chunks within render distance.
-pub const ChunkCache = packed struct {
-    /// A pointer to where the 2d pointer array is allocated.
-    /// Dynamic because render distance isn't constant.
-    data: [*]*Chunk,
-    render_distance: u32,
+// /// Stores pointers to all loaded chunks,
+// /// that is, chunks within render distance.
+// pub const ChunkCache = packed struct {
+//     /// A pointer to where the 2d pointer array is allocated.
+//     /// Dynamic because render distance isn't constant.
+//     data: [*]*Chunk,
+//     render_distance: u32,
     
-    fn init(render_distance: u32) ChunkCache {
-        _ = render_distance;
-    }
-};
+//     fn init(render_distance: u32) ChunkCache {
+//         _ = render_distance;
+//     }
+// };
 
 pub const chunk_side = 16;
 pub const chunk_height = 256;
@@ -121,9 +133,23 @@ pub const Chunk = struct {
         };
         
         for (0..chunk_side) |ix| {
-            for (0..chunk_height) |iy| {
-                for (0..chunk_side) |iz| {
-                    if (iy < 128) buf.blocks[ix][iy][iz] = &Block.stone;
+            for (0..chunk_side) |iz| {
+                const fix: f32 = @floatFromInt(ix);
+                const fiz: f32 = @floatFromInt(iz);
+                const fx: f32 = @floatFromInt(x);
+                const fz: f32 = @floatFromInt(z);
+                
+                const octave1 = noise.perlin((fix + 16 * fx) * 0.02, (fiz + 16 * fz) * 0.02);
+                const octave2 = noise.perlin((fix + 16 * fx) * 0.03, (fiz + 16 * fz) * 0.03);
+                const octave3 = noise.perlin((fix + 16 * fx) * 0.1, (fiz + 16 * fz) * 0.1);
+                const height = octave1 / 3 + ((octave2 + octave3) / 20);
+                
+                for (0..chunk_height) |iy| {
+                    const fiy: f32 = @floatFromInt(iy);
+                    if (fiy < 160 * (height * 0.5 + 0.5))
+                        buf.blocks[ix][iy][iz] = &Block.sand;
+                    if (fiy >= 160 * (height * 0.5 + 0.5) and fiy < 76)
+                        buf.blocks[ix][iy][iz] = &Block.water;
                 }
             }
         }
@@ -143,9 +169,35 @@ pub const Chunk = struct {
                     const fy: f32 = @floatFromInt(iy);
                     const fz: f32 = @floatFromInt(iz);
                     
-                    try block.mesh(.{}, fx + ofx, fy, fz + ofz, buffer);
+                    const sx: i32 = @intCast(ix);
+                    const sy: i32 = @intCast(iy);
+                    const sz: i32 = @intCast(iz);
+                    
+                    try block.mesh(
+                        .{
+                            .north = !self.isOpaqueAt(sx, sy, sz + 1),
+                            .south = !self.isOpaqueAt(sx, sy, sz - 1),
+                            .east  = !self.isOpaqueAt(sx + 1, sy, sz),
+                            .west  = !self.isOpaqueAt(sx - 1, sy, sz),
+                            .up    = !self.isOpaqueAt(sx, sy + 1, sz),
+                            .down  = !self.isOpaqueAt(sx, sy - 1, sz)
+                        },
+                        fx + ofx, fy, fz + ofz, buffer
+                    );
                 }
             }
         }
+    }
+    
+    fn isOpaqueAt(self: *Chunk, x: i32, y: i32, z: i32) bool {
+        return if (y < 0 or y >= chunk_height) false
+        else if (x < 0 or x >= chunk_side or
+                 z < 0 or z >= chunk_side) false
+        else { 
+            const ux: usize = @intCast(x);
+            const uy: usize = @intCast(y);
+            const uz: usize = @intCast(z);
+            return !self.blocks[ux][uy][uz].is_transparent;
+        };
     }
 };
