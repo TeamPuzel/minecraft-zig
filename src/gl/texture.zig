@@ -3,20 +3,20 @@ const c = @import("../platform/c.zig");
 const std = @import("std");
 const assets = @import("../assets/assets.zig");
 
-pub var terrain: Texture = undefined;
-
-/// Creates all textures.
-pub fn init() !void {
-    terrain = try Texture.create(assets.terrain);
-}
-
-/// Destroys all textures.
-pub fn deinit() void {
-    terrain.destroy();
-}
-
 pub const Texture = packed struct {
     id: u32,
+    
+    pub var terrain: Texture = undefined;
+    
+    /// Creates all textures.
+    pub fn init() !void {
+        terrain = try Texture.create(assets.terrain);
+    }
+
+    /// Destroys all textures.
+    pub fn deinit() void {
+        terrain.destroy();
+    }
     
     fn create(data: []const u8) !Texture {
         // Load image

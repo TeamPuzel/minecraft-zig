@@ -9,23 +9,23 @@ const terrain_f = @embedFile("shaders/terrain.fs");
 const c = @import("../platform/c.zig");
 const std = @import("std");
 
-pub var terrain: Shader = undefined;
-
-/// Creates all shaders.
-/// Must run after opengl is initialized.
-pub fn init() !void {
-    terrain = try Shader.create(terrain_v, terrain_f);
-}
-
-/// Destroys all shaders.
-pub fn deinit() void {
-    terrain.destroy();
-}
-
 const Kind = enum (u8) { Vertex, Fragment };
 
 pub const Shader = packed struct {
     id: u32,
+    
+    pub var terrain: Shader = undefined;
+    
+    /// Creates all shaders.
+    /// Must run after opengl is initialized.
+    pub fn init() !void {
+        terrain = try Shader.create(terrain_v, terrain_f);
+    }
+
+    /// Destroys all shaders.
+    pub fn deinit() void {
+        terrain.destroy();
+    }
     
     fn create(v_src: [:0]const u8, f_src: [:0]const u8) !Shader {
         const program = c.glCreateProgram();

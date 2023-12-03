@@ -3,8 +3,6 @@ const std = @import("std");
 const c = @import("../platform/c.zig");
 const noise = @import("../math/noise.zig");
 const window = @import("../platform/window.zig");
-const shader = @import("../gl/shader.zig");
-const texture = @import("../gl/texture.zig");
 
 const Matrix4x4 = @import("../math/matrix.zig").Matrix4x4;
 const Player = @import("entity.zig").Player;
@@ -14,12 +12,14 @@ const Block = @import("block.zig").Block;
 pub const World = struct {
     chunks: ChunkStorage,
     player: Player,
+    mesh: TerrainVertexBuffer,
     
     pub const ChunkStorage = std.AutoArrayHashMap(ChunkPosition, Chunk);
     
     pub fn generate() !World {
         var buf = World {
             .chunks = ChunkStorage.init(std.heap.c_allocator),
+            .mesh = TerrainVertexBuffer.create(std.heap.c_allocator),
             .player = .{}
         };
         
@@ -31,20 +31,29 @@ pub const World = struct {
             }
         }
         
+        try buf.remesh();
+        
         return buf;
+    }
+    
+    pub fn deinit(self: *World) void {
+        self.chunks.deinit();
+        self.mesh.destroy();
     }
     
     pub fn update(self: *World) void {
         self.player.super.update(&self.player, self);
     }
     
+    fn remesh(self: *World) !void {
+        var iter = self.chunks.iterator();
+        while (iter.next()) |chunk| {
+            try chunk.value_ptr.mesh(&self.mesh);
+        }
+        self.mesh.sync();
+    }
+    
     pub fn draw(self: *const World) void {
-        shader.terrain.bind();
-        texture.terrain.bind();
-        const sampler = shader.terrain.getUniform("texture_id");
-        const transform = shader.terrain.getUniform("transform");
-        c.glUniform1i(sampler, 0);
-        
         const width: f32 = @floatFromInt(window.actual_width);
         const height: f32 = @floatFromInt(window.actual_height);
         
@@ -55,42 +64,10 @@ pub const World = struct {
             )
             .mul(&Matrix4x4.rotation(.Yaw, self.player.super.orientation.yaw))
             .mul(&Matrix4x4.rotation(.Pitch, self.player.super.orientation.pitch))
-            // .mul(&Matrix4x4.frustum(-aspect / 2, aspect / 2, -0.5, 0.5, 0.4, 1000));
             .mul(&Matrix4x4.projection(width, height, 80, 0.1, 1000));
         
-        c.glUniformMatrix4fv(transform, 1, c.GL_TRUE, @ptrCast(&mat.data));
-        
-        var iter = self.chunks.iterator();
-        while (iter.next()) |chunk| {
-            if (chunk.value_ptr.mesh) |mesh| {
-                mesh.draw();
-            }
-        }
-        
+        self.mesh.draw(&mat);
     }
-    
-    // MARK: - Serialization ---------------------------------------------------
-    
-    /// Load the world from the world folder.
-    pub fn loadFromFile(name: []const u8) LoadError!World {
-        _ = name;
-        unreachable;
-    }
-    
-    /// Save the world to the world folder.
-    pub fn saveToFile(self: *const World) SaveError!void {
-        _ = self;
-        unreachable;
-    }
-    
-    pub const LoadError = error {
-        Corrupted,
-        Inaccessible
-    };
-    
-    pub const SaveError = error {
-        Inaccessible
-    };
 };
 
 /// The key for chunk storage.
@@ -118,9 +95,6 @@ pub const Chunk = struct {
     /// A large chunk of memory storing block pointers.
     blocks: [chunk_side][chunk_height][chunk_side]*const Block,
     
-    /// If not `null` the chunk is loaded
-    mesh: ?TerrainVertexBuffer,
-    
     /// Quite often, especially when rendering, chunks need to be able to
     /// efficiently refer to neighboring chunks. This is important because
     /// chunks are stored in a hash map. It is important not to invalidate
@@ -139,7 +113,6 @@ pub const Chunk = struct {
         var buf = Chunk {
             .x = x,
             .z = z,
-            .mesh = TerrainVertexBuffer.create(std.heap.c_allocator),
             .blocks = @bitCast(
                 [_] *const Block { &Block.air } ** 
                     (chunk_side * chunk_height * chunk_side)
@@ -155,28 +128,10 @@ pub const Chunk = struct {
             }
         }
         
-        try buf.remesh();
-        
         return buf;
     }
     
-    pub fn destroy(self: *Chunk) void {
-        if (self.mesh) |_| self.mesh.?.destroy();
-    }
-    
-    pub fn load(self: *Chunk) void {
-        std.debug.assert(self.mesh == null);
-        
-    }
-    
-    pub fn unload(self: *Chunk) void {
-        std.debug.assert(self.mesh != null);
-        
-    }
-    
-    fn remesh(self: *Chunk) !void {
-        self.mesh.?.vertices.clearRetainingCapacity();
-        
+    pub fn mesh(self: *Chunk, buffer: *TerrainVertexBuffer) !void {
         const ofx: f32 = @floatFromInt(self.x * chunk_side);
         const ofz: f32 = @floatFromInt(self.z * chunk_side);
         
@@ -188,11 +143,9 @@ pub const Chunk = struct {
                     const fy: f32 = @floatFromInt(iy);
                     const fz: f32 = @floatFromInt(iz);
                     
-                    try block.mesh(.{}, fx + ofx, fy, fz + ofz, &self.mesh.?);
+                    try block.mesh(.{}, fx + ofx, fy, fz + ofz, buffer);
                 }
             }
         }
-        
-        self.mesh.?.sync();
     }
 };

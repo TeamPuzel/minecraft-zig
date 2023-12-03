@@ -3,14 +3,17 @@
 const std = @import("std");
 const c = @import("../platform/c.zig");
 
+const Texture = @import("texture.zig").Texture;
+const Shader = @import("shader.zig").Shader;
+const Matrix4x4 = @import("../math/matrix.zig").Matrix4x4;
+
 /// A vertex buffer optimized for caching terrain on the gpu and only
 /// synchronizing all changes at once when needed.
-/// 
-/// It could potentially be optimized further by only sending updated vertices,
-/// however, that would probably be overkill.
 pub const TerrainVertexBuffer = struct {
     id: u32,
     vertices: std.ArrayList(Vertex),
+    texture: Texture,
+    shader: Shader,
     
     pub const Vertex = packed struct {
         position: Position,
@@ -47,6 +50,8 @@ pub const TerrainVertexBuffer = struct {
     pub fn create(allocator: std.mem.Allocator) TerrainVertexBuffer {
         var buf: TerrainVertexBuffer = undefined;
         buf.vertices = std.ArrayList(Vertex).init(allocator);
+        buf.shader = Shader.terrain;
+        buf.texture = Texture.terrain;
         c.glGenBuffers(1, &buf.id);
         
         buf.bind();
@@ -72,10 +77,19 @@ pub const TerrainVertexBuffer = struct {
     
     pub fn bind(self: *const TerrainVertexBuffer) void {
         c.glBindBuffer(c.GL_ARRAY_BUFFER, self.id);
+        self.texture.bind();
+        self.shader.bind();
     }
     
-    pub fn draw(self: *const TerrainVertexBuffer) void {
+    pub fn draw(self: *const TerrainVertexBuffer, matrix: *const Matrix4x4) void {
         self.bind();
+        
+        const sampler = self.shader.getUniform("texture_id");
+        const transform = self.shader.getUniform("transform");
+        c.glUniform1i(sampler, 0);
+        
+        c.glUniformMatrix4fv(transform, 1, c.GL_TRUE, @ptrCast(&matrix.data));
+        
         c.glDrawArrays(c.GL_TRIANGLES, 0, @intCast(self.vertices.items.len));
     }
     
