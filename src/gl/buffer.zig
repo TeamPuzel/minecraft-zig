@@ -75,12 +75,9 @@ pub const TerrainVertexBuffer = struct {
     }
     
     pub fn draw(self: *const TerrainVertexBuffer) void {
+        self.bind();
         c.glDrawArrays(c.GL_TRIANGLES, 0, @intCast(self.vertices.items.len));
     }
-    
-    // pub fn wireframe(self: *const BlockVertexBuffer) void {
-    //     c.glDrawArrays(c.GL_LINES, 0, @intCast(self.vertices.items.len));
-    // }
     
     fn layout(self: *const TerrainVertexBuffer) void {
         _ = self;

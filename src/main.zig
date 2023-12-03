@@ -5,13 +5,7 @@ const window = @import("platform/window.zig");
 const shader = @import("gl/shader.zig");
 const texture = @import("gl/texture.zig");
 
-const TerrainVertexBuffer = @import("gl/buffer.zig").TerrainVertexBuffer;
-const Vertex = TerrainVertexBuffer.Vertex;
-const Matrix4x4 = @import("utilities/matrix.zig").Matrix4x4;
-
-// const World = @import("world/world.zig").World;
-const Block = @import("world/block.zig").Block;
-const Chunk = @import("world/chunk.zig").Chunk;
+const World = @import("world/world.zig").World;
 
 pub fn main() !void {
     // The window module sets up an SDL window and the OpenGL context
@@ -27,42 +21,15 @@ pub fn main() !void {
     try texture.init();
     defer texture.deinit();
     
-    window.lockCursor(false);
+    window.lockCursor(true);
     
-    // MARK: - Test ------------------------------------------------------------
-    shader.terrain.bind();
-    texture.terrain.bind();
-    
-    var test_block = TerrainVertexBuffer.create(std.heap.c_allocator);
-    defer test_block.destroy();
-    
-    try Block.dirt.mesh(.{}, 0, 0, 0, &test_block);
-    test_block.sync();
-    
-    // c.glActiveTexture(c.GL_TEXTURE0);
-    const sampler = shader.terrain.getUniform("texture_id");
-    const transform = shader.terrain.getUniform("transform");
-    c.glUniform1i(sampler, 0);
-    
-    var t: f32 = 0;
+    var world = try World.generate();
     
     // Keep running until the program is requested to quit
     while (window.update()) {
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
-        
-        const width: f32 = @floatFromInt(window.actual_width);
-        const height: f32 = @floatFromInt(window.actual_height);
-        const aspect = width / height;
-        
-        const mat = Matrix4x4.rotation(.Yaw, t / 100)
-            .mul(&Matrix4x4.translation(0, 0, -2))
-            .mul(&Matrix4x4.frustum(-aspect / 2, aspect / 2, -0.5, 0.5, 0.4, 1000));
-            // .mul(&Matrix4x4.projection(width, height, 90, 0.01, 1000));
-        
-        c.glUniformMatrix4fv(transform, 1, c.GL_TRUE, @ptrCast(&mat.data));
-        
-        test_block.draw();
-        t += 1;
+        world.update();
+        world.draw();
         window.swapBuffers();
     }
 }

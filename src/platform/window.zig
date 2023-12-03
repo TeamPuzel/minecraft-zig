@@ -78,7 +78,7 @@ pub fn init() !void {
     // Generic OpenGL settings
     c.glClearColor(0.0, 0.0, 0.0, 1.0);
     c.glEnable(c.GL_DEPTH_TEST);
-    // c.glEnable(c.GL_CULL_FACE);
+    c.glEnable(c.GL_CULL_FACE);
 }
 
 /// Deconstructs all window and library state.

@@ -39,9 +39,9 @@ pub const Matrix4x4 = extern struct {
         return @reduce(.And, m1 == m2);
     }
     
-    pub const Rotation = enum { Yaw, Pitch, Roll };
+    pub const RotationAxis = enum { Yaw, Pitch, Roll };
     
-    pub fn rotation(comptime axis: Rotation, angle: f32) Matrix4x4 {
+    pub fn rotation(comptime axis: RotationAxis, angle: f32) Matrix4x4 {
         const a = std.math.degreesToRadians(f32, angle);
         return switch (axis) {
             .Pitch => .{ .data = .{
@@ -84,9 +84,9 @@ pub const Matrix4x4 = extern struct {
     }
     
     pub fn projection(w: f32, h: f32, fov: f32, near: f32, far: f32) Matrix4x4 {
-        const aspect = w / h;
+        const aspect = h / w;
         const q = far / (far - near);
-        const f = 1 / @tan(fov / 2);
+        const f = 1 / @tan(std.math.degreesToRadians(f32, fov) / 2);
         return .{ .data = .{
             .{ aspect * f, 0, 0, 0 },
             .{ 0, f, 0, 0 },
