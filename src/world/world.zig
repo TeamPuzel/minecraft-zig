@@ -18,7 +18,7 @@ pub const World = struct {
     timer: std.time.Timer,
     delta: f32 = 0,
     
-    pub const ChunkStorage = std.AutoArrayHashMap(ChunkPosition, Chunk);
+    pub const ChunkStorage = std.AutoArrayHashMap(ChunkPosition, *Chunk);
     
     pub fn generate() !World {
         var buf = World {
@@ -30,7 +30,28 @@ pub const World = struct {
         
         var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
             var iz: i32 = -render_distance; while (iz <= render_distance) : (iz += 1) {
-                try buf.chunks.put(.{ .x = ix, .z = iz }, try Chunk.generate(ix, iz));
+                // Generate chunk
+                try buf.chunks.put(.{ .x = ix, .z = iz }, try std.heap.c_allocator.create(Chunk));
+                const chunk = buf.chunks.getPtr(.{ .x = ix, .z = iz }).?;
+                chunk.*.* = Chunk.generate(ix, iz); // CAUTION: This is a crime.
+                // TODO: Prevent memory leak
+                
+                if (buf.chunks.getPtr(.{ .x = ix + 1, .z = iz })) |n| {
+                    n.*.neighbors.west = chunk.*;
+                    chunk.*.neighbors.east = n.*;
+                }
+                if (buf.chunks.getPtr(.{ .x = ix - 1, .z = iz })) |n| {
+                    n.*.neighbors.east = chunk.*;
+                    chunk.*.neighbors.west = n.*;
+                }
+                if (buf.chunks.getPtr(.{ .x = ix, .z = iz + 1 })) |n| {
+                    n.*.neighbors.south = chunk.*;
+                    chunk.*.neighbors.north = n.*;
+                }
+                if (buf.chunks.getPtr(.{ .x = ix, .z = iz - 1 })) |n| {
+                    n.*.neighbors.north = chunk.*;
+                    chunk.*.neighbors.south = n.*;
+                }
             }
         }
         
@@ -60,7 +81,7 @@ pub const World = struct {
     fn remesh(self: *World) !void {
         var iter = self.chunks.iterator();
         while (iter.next()) |chunk| {
-            try chunk.value_ptr.mesh(&self.mesh);
+            try chunk.value_ptr.*.mesh(&self.mesh);
         }
         self.mesh.sync();
     }
@@ -121,7 +142,7 @@ pub const Chunk = struct {
         west:  ?*Chunk = null
     },
     
-    pub fn generate(x: i32, z: i32) !Chunk {
+    pub fn generate(x: i32, z: i32) Chunk {
         var buf = Chunk {
             .x = x,
             .z = z,
@@ -157,7 +178,7 @@ pub const Chunk = struct {
         return buf;
     }
     
-    pub fn mesh(self: *Chunk, buffer: *TerrainVertexBuffer) !void {
+    pub fn mesh(self: *const Chunk, buffer: *TerrainVertexBuffer) !void {
         const ofx: f32 = @floatFromInt(self.x * chunk_side);
         const ofz: f32 = @floatFromInt(self.z * chunk_side);
         
@@ -189,14 +210,25 @@ pub const Chunk = struct {
         }
     }
     
-    fn isOpaqueAt(self: *Chunk, x: i32, y: i32, z: i32) bool {
+    fn isOpaqueAt(self: *const Chunk, x: i32, y: i32, z: i32) bool {
+        const ux: usize = @intCast(@abs(x));
+        const uy: usize = @intCast(@abs(y));
+        const uz: usize = @intCast(@abs(z));
+        
         return if (y < 0 or y >= chunk_height) false
-        else if (x < 0 or x >= chunk_side or
-                 z < 0 or z >= chunk_side) false
-        else { 
-            const ux: usize = @intCast(x);
-            const uy: usize = @intCast(y);
-            const uz: usize = @intCast(z);
+        else if (x < 0) {
+            const west = self.neighbors.west orelse return false;
+            return !west.blocks[chunk_side - 1][uy][uz].is_transparent;
+        } else if (x >= chunk_side) {
+            const east = self.neighbors.east orelse return false;
+            return !east.blocks[0][uy][uz].is_transparent;
+        } else if (z < 0) {
+            const south = self.neighbors.south orelse return false;
+            return !south.blocks[ux][uy][chunk_side - 1].is_transparent;
+        } else if (z >= chunk_side) {
+            const north = self.neighbors.north orelse return false;
+            return !north.blocks[ux][uy][0].is_transparent;
+        } else { 
             return !self.blocks[ux][uy][uz].is_transparent;
         };
     }
