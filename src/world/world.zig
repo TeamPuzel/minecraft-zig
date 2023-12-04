@@ -4,12 +4,18 @@ const c = @import("../platform/c.zig");
 const noise = @import("../math/noise.zig");
 const window = @import("../platform/window.zig");
 
+const Thread = std.Thread;
+
 const Matrix4x4 = @import("../math/matrix.zig").Matrix4x4;
 const Player = @import("entity.zig").Player;
 const TerrainVertexBuffer = @import("../gl/buffer.zig").TerrainVertexBuffer;
 const Block = @import("block.zig").Block;
 
 const render_distance = 16;
+
+pub const ChunkStorageActor = struct {
+    
+};
 
 pub const World = struct {
     chunks: ChunkStorage,
