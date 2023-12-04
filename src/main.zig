@@ -2,9 +2,9 @@
 const c = @import("platform/c.zig");
 const std = @import("std");
 const window = @import("platform/window.zig");
+
 const Shader = @import("gl/shader.zig").Shader;
 const Texture = @import("gl/texture.zig").Texture;
-
 const World = @import("world/world.zig").World;
 
 pub fn main() !void {

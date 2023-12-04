@@ -64,6 +64,36 @@ pub const TerrainVertexBuffer = struct {
         self.vertices.deinit();
     }
     
+    pub fn sort(self: *TerrainVertexBuffer, x: f32, y: f32, z: f32) void {
+        const triangles: [*][3]Vertex = @ptrCast(self.vertices.items.ptr);
+        const len = self.vertices.items.len / 3;
+        const slice = triangles[0..len];
+        
+        const camera = @Vector(3, f32) { x, y, z };
+        
+        std.sort.heap([3]Vertex, slice, camera, triCompare);
+    }
+    
+    fn triCompare(pos: @Vector(3, f32), lhs: [3]Vertex, rhs: [3]Vertex) bool {
+        return triDistance(pos, lhs) > triDistance(pos, rhs);
+    }
+    
+    fn triDistance(pos: @Vector(3, f32), tri: [3]Vertex) f32 {
+        const v1 = @Vector(3, f32) {
+            tri[0].position.x, tri[0].position.y, tri[0].position.z
+        };
+        const v2 = @Vector(3, f32) {
+            tri[1].position.x, tri[1].position.y, tri[1].position.z
+        };
+        const v3 = @Vector(3, f32) {
+            tri[2].position.x, tri[2].position.y, tri[2].position.z
+        };
+        
+        const average = (v1 + v2 + v3) / @Vector(3, f32) { 3, 3, 3 };
+        const diff = average - pos;
+        return @sqrt(@reduce(.Add, diff * diff));
+    }
+    
     /// Update the buffer on the GPU side with the local CPU data.
     pub fn sync(self: *const TerrainVertexBuffer) void {
         self.bind();

@@ -9,7 +9,7 @@ const Player = @import("entity.zig").Player;
 const TerrainVertexBuffer = @import("../gl/buffer.zig").TerrainVertexBuffer;
 const Block = @import("block.zig").Block;
 
-const render_distance = 8;
+const render_distance = 16;
 
 pub const World = struct {
     chunks: ChunkStorage,
@@ -32,25 +32,24 @@ pub const World = struct {
             var iz: i32 = -render_distance; while (iz <= render_distance) : (iz += 1) {
                 // Generate chunk
                 try buf.chunks.put(.{ .x = ix, .z = iz }, try std.heap.c_allocator.create(Chunk));
-                const chunk = buf.chunks.getPtr(.{ .x = ix, .z = iz }).?;
-                chunk.*.* = Chunk.generate(ix, iz); // CAUTION: This is a crime.
-                // TODO: Prevent memory leak
+                const chunk = buf.chunks.get(.{ .x = ix, .z = iz }).?;
+                chunk.* = Chunk.generate(ix, iz);
                 
-                if (buf.chunks.getPtr(.{ .x = ix + 1, .z = iz })) |n| {
-                    n.*.neighbors.west = chunk.*;
-                    chunk.*.neighbors.east = n.*;
+                if (buf.chunks.get(.{ .x = ix + 1, .z = iz })) |n| {
+                    n.neighbors.west = chunk;
+                    chunk.neighbors.east = n;
                 }
-                if (buf.chunks.getPtr(.{ .x = ix - 1, .z = iz })) |n| {
-                    n.*.neighbors.east = chunk.*;
-                    chunk.*.neighbors.west = n.*;
+                if (buf.chunks.get(.{ .x = ix - 1, .z = iz })) |n| {
+                    n.neighbors.east = chunk;
+                    chunk.neighbors.west = n;
                 }
-                if (buf.chunks.getPtr(.{ .x = ix, .z = iz + 1 })) |n| {
-                    n.*.neighbors.south = chunk.*;
-                    chunk.*.neighbors.north = n.*;
+                if (buf.chunks.get(.{ .x = ix, .z = iz + 1 })) |n| {
+                    n.neighbors.south = chunk;
+                    chunk.neighbors.north = n;
                 }
-                if (buf.chunks.getPtr(.{ .x = ix, .z = iz - 1 })) |n| {
-                    n.*.neighbors.north = chunk.*;
-                    chunk.*.neighbors.south = n.*;
+                if (buf.chunks.get(.{ .x = ix, .z = iz - 1 })) |n| {
+                    n.neighbors.north = chunk;
+                    chunk.neighbors.south = n;
                 }
             }
         }
@@ -63,6 +62,9 @@ pub const World = struct {
     }
     
     pub fn deinit(self: *World) void {
+        var iter = self.chunks.iterator();
+        while (iter.next()) |i| std.heap.c_allocator.destroy(i.value_ptr.*);
+        
         self.chunks.deinit();
         self.mesh.destroy();
     }
@@ -83,6 +85,14 @@ pub const World = struct {
         while (iter.next()) |chunk| {
             try chunk.value_ptr.*.mesh(&self.mesh);
         }
+        
+        // TODO: Optimize, currently unusable
+        // self.mesh.sort(
+        //     self.player.super.position.x,
+        //     self.player.super.position.y,
+        //     self.player.super.position.z
+        // );
+        
         self.mesh.sync();
     }
     
@@ -168,7 +178,7 @@ pub const Chunk = struct {
                 for (0..chunk_height) |iy| {
                     const fiy: f32 = @floatFromInt(iy);
                     if (fiy < 160 * (height * 0.5 + 0.5))
-                        buf.blocks[ix][iy][iz] = &Block.sand;
+                        buf.blocks[ix][iy][iz] = &Block.grass;
                     if (fiy >= 160 * (height * 0.5 + 0.5) and fiy < 76)
                         buf.blocks[ix][iy][iz] = &Block.water;
                 }
@@ -217,16 +227,16 @@ pub const Chunk = struct {
         
         return if (y < 0 or y >= chunk_height) false
         else if (x < 0) {
-            const west = self.neighbors.west orelse return false;
+            const west = self.neighbors.west orelse return true;
             return !west.blocks[chunk_side - 1][uy][uz].is_transparent;
         } else if (x >= chunk_side) {
-            const east = self.neighbors.east orelse return false;
+            const east = self.neighbors.east orelse return true;
             return !east.blocks[0][uy][uz].is_transparent;
         } else if (z < 0) {
-            const south = self.neighbors.south orelse return false;
+            const south = self.neighbors.south orelse return true;
             return !south.blocks[ux][uy][chunk_side - 1].is_transparent;
         } else if (z >= chunk_side) {
-            const north = self.neighbors.north orelse return false;
+            const north = self.neighbors.north orelse return true;
             return !north.blocks[ux][uy][0].is_transparent;
         } else { 
             return !self.blocks[ux][uy][uz].is_transparent;

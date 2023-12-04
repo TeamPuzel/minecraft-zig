@@ -68,7 +68,7 @@ pub const Block = struct {
         
         const s = half_side;
         const c = tex_uvc;
-        const o: f32 = if (self.tag == .Water) 1.0 else 1.0;
+        const o: f32 = if (self.tag == .Water) 0.4 else 1.0;
         
         // Back
         if (faces.north) {
