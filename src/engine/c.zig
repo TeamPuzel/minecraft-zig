@@ -1,4 +1,3 @@
-//! This module exports the raw C apis of used libraries.
 
 const builtin = @import("builtin");
 

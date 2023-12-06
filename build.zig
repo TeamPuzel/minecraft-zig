@@ -35,7 +35,6 @@ pub fn build(b: *std.Build) void {
         
         exe.linkSystemLibrary("SDL2");
         exe.linkSystemLibrary("SDL2_image");
-        // exe.linkSystemLibrary("OpenGL32");
     } else if (builtin.os.tag == .macos) {
         exe.addIncludePath(.{ .path = "/opt/homebrew/include" });
         

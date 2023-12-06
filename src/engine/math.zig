@@ -39,7 +39,7 @@ pub const Matrix4x4 = extern struct {
         return @reduce(.And, m1 == m2);
     }
     
-    pub const RotationAxis = enum { Yaw, Pitch, Roll };
+    pub const RotationAxis = enum { Pitch, Yaw, Roll };
     
     pub fn rotation(comptime axis: RotationAxis, angle: f32) Matrix4x4 {
         const a = std.math.degreesToRadians(f32, angle);
@@ -92,19 +92,6 @@ pub const Matrix4x4 = extern struct {
             .{ 0, f, 0, 0 },
             .{ 0, 0, q, 1 },
             .{ 0, 0, -near * q, 0 }
-        }};
-    }
-    
-    pub fn frustum(l: f32, r: f32, top: f32, bottom: f32, near: f32, far: f32) Matrix4x4 {
-        const a = (r + l) / (r - l);
-        const b = (top + bottom) / (top - bottom);
-        const c = -((far + near) / (far - near));
-        const d = -(2 * far * near / (far - near));
-        return .{ .data = .{
-            .{ 2 * near / (r - l), 0, a, 0 },
-            .{ 0, 2 * near / (top - bottom), b, 0 },
-            .{ 0, 0, c, d },
-            .{ 0, 0, -1, 0 }
         }};
     }
     
