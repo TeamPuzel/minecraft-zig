@@ -17,7 +17,7 @@ pub const Window = struct {
     const initial_width = 800;
     const initial_height = 600;
     
-    pub fn init(name: [:0]const u8) !Window {
+    pub fn init(name: [:0]const u8) !*Window {
         if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) return error.InitializingSDL;
         _ = c.IMG_Init(c.IMG_INIT_PNG);
         _ = c.SDL_GL_LoadLibrary(null);
@@ -80,12 +80,15 @@ pub const Window = struct {
         
         input.init();
         
-        return .{
-            .window = window,
-            .context = context,
-            .width = w,
-            .height = h
-        };
+        const class_ptr = try std.heap.c_allocator.create(Window);
+        class_ptr.window = window;
+        class_ptr.context = context;
+        class_ptr.width = w;
+        class_ptr.height = h;
+        
+        Window.shared = class_ptr;
+        
+        return class_ptr;
     }
     
     pub fn deinit(self: Window) void {
@@ -93,6 +96,8 @@ pub const Window = struct {
         c.SDL_DestroyWindow(self.window);
         c.IMG_Quit();
         c.SDL_Quit();
+        
+        std.heap.c_allocator.destroy(Window.shared);
     }
     
     var event: c.SDL_Event = undefined;

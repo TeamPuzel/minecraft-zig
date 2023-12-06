@@ -4,23 +4,31 @@ const engine = @import("engine/engine.zig");
 const assets = @import("assets/assets.zig");
 
 const Matrix4x4 = engine.math.Matrix4x4;
-const TerrainDrawObject = engine.graphics.TerrainDrawObject;
-const Vertex = TerrainDrawObject.Vertex;
 
 const render_distance = 16;
 
 pub const World = struct {
+    // A hash map of all the chunks in the world.
     chunks: ChunkStorage,
+    /// A cache for chunks within render distance, sorted by distance
+    /// from the camera entity.
+    visible_chunks: ChunkCache,
+    /// Currently the player, but this will eventually be a pointer to any
+    /// entity. This is just what the camera is attached to.
     player: Player,
+    
+    // TODO: The other properties are to be revised, multi-threading is required.
     mesh: TerrainDrawObject,
     timer: std.time.Timer,
     delta: f32 = 0,
     
     pub const ChunkStorage = std.AutoArrayHashMap(ChunkPosition, *Chunk);
+    pub const ChunkCache = std.ArrayList(*Chunk);
     
     pub fn init() !World {
         var self = World {
             .chunks = ChunkStorage.init(std.heap.c_allocator),
+            .visible_chunks = ChunkCache.init(std.heap.c_allocator),
             .mesh = TerrainDrawObject.create(
                 std.heap.c_allocator,
                 try engine.graphics.Shader.create(assets.terrain_vs, assets.terrain_fs),
@@ -67,6 +75,7 @@ pub const World = struct {
         var iter = self.chunks.iterator();
         while (iter.next()) |i| std.heap.c_allocator.destroy(i.value_ptr.*);
         
+        self.visible_chunks.deinit();
         self.chunks.deinit();
         self.mesh.destroy();
     }
@@ -117,19 +126,6 @@ pub const World = struct {
 
 /// The key for chunk storage.
 pub const ChunkPosition = packed struct { x: i32, z: i32 };
-
-// /// Stores pointers to all loaded chunks,
-// /// that is, chunks within render distance.
-// pub const ChunkCache = packed struct {
-//     /// A pointer to where the 2d pointer array is allocated.
-//     /// Dynamic because render distance isn't constant.
-//     data: [*]*Chunk,
-//     render_distance: u32,
-    
-//     fn init(render_distance: u32) ChunkCache {
-//         _ = render_distance;
-//     }
-// };
 
 pub const chunk_side = 16;
 pub const chunk_height = 256;
@@ -480,7 +476,9 @@ pub const Player = extern struct {
         // Mouse look
         const mouse = engine.input.relativeMouse();
         self.super.orientation.yaw += mouse.x / 10;
-        self.super.orientation.pitch += std.math.clamp(mouse.y / 10, -90, 90);
+        self.super.orientation.pitch += mouse.y / 10;
+        self.super.orientation.pitch = 
+            std.math.clamp(self.super.orientation.pitch, -90, 90);
             
         // Basic, camera unaligned movement
         if (engine.input.key(.w)) self.super.position.z          += 0.01 * world.delta;
@@ -489,5 +487,29 @@ pub const Player = extern struct {
         if (engine.input.key(.d)) self.super.position.x          += 0.01 * world.delta;
         if (engine.input.key(.space)) self.super.position.y      += 0.01 * world.delta;
         if (engine.input.key(.left_shift)) self.super.position.y -= 0.01 * world.delta;
+    }
+};
+
+const TerrainDrawObject = engine.graphics.DrawObject(Vertex);
+
+const Vertex = packed struct {
+    position: Vertex.Position,
+    tex_coord: TextureCoord,
+    color: engine.Color = engine.Color.white,
+    
+    pub const Position = packed struct {
+        x: f32, y: f32, z: f32
+    };
+
+    pub const TextureCoord = packed struct {
+        u: f32, v: f32
+    };
+    
+    pub fn init(x: f32, y: f32, z: f32, u: f32, v: f32, r: f32, g: f32, b: f32, a: f32) Vertex {
+        return .{
+            .position = .{ .x = x, .y = y, .z = z },
+            .tex_coord = .{ .u = u, .v = v },
+            .color = .{ .r = r, .g = g, .b = b, .a = a }
+        };
     }
 };

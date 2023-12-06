@@ -3,7 +3,6 @@ const c = @import("c.zig");
 const std = @import("std");
 
 const Color = @import("engine.zig").Color;
-
 const Matrix4x4 = @import("math.zig").Matrix4x4;
 
 pub fn setClearColor(color: Color) void {
@@ -121,144 +120,126 @@ pub const Texture = packed struct {
     }
 };
 
-pub const TerrainDrawObject = struct {
-    id: u32,
-    vertices: std.ArrayList(Vertex),
-    texture: Texture,
-    shader: Shader,
-    
-    pub const Vertex = packed struct {
-        position: Position,
-        tex_coord: TextureCoord,
-        color: Color = Color.white,
+/// A specialized representation of a shared CPU / GPU object.
+/// Currently vertices can only be simple structures containing nothing
+/// but structures of floats. They *must* be `packed`.
+pub fn DrawObject(comptime V: type) type {
+    return struct { const Self = @This();
+        id: u32,
+        vertices: std.ArrayList(V),
+        texture: ?Texture,
+        shader: Shader,
         
-        pub const Position = packed struct {
-            x: f32, y: f32, z: f32
-        };
-
-        pub const TextureCoord = packed struct {
-            u: f32, v: f32
-        };
-        
-        pub fn init(x: f32, y: f32, z: f32, u: f32, v: f32, r: f32, g: f32, b: f32, a: f32) Vertex {
-            return .{
-                .position = .{ .x = x, .y = y, .z = z },
-                .tex_coord = .{ .u = u, .v = v },
-                .color = .{ .r = r, .g = g, .b = b, .a = a }
+        pub fn create(alloc: std.mem.Allocator, shader: Shader, tex: ?Texture) Self {
+            var self = Self {
+                .vertices = std.ArrayList(V).init(alloc),
+                .texture = tex,
+                .shader = shader,
+                .id = undefined
             };
+            
+            c.glGenBuffers(1, &self.id);
+        
+            self.bind();
+            return self;
+        }
+        
+        pub fn destroy(self: *Self) void {
+            c.glDeleteBuffers(1, &self.id);
+            self.vertices.deinit();
+            
+            self.shader.destroy(); // nocheckin
+            if (self.texture) |_| self.texture.?.destroy(); // nocheckin
+        }
+        
+        pub fn sync(self: *const Self) void {
+            self.bind();
+            c.glBufferData(
+                c.GL_ARRAY_BUFFER,
+                @intCast(self.vertices.items.len * @sizeOf(V)),
+                self.vertices.items.ptr,
+                c.GL_DYNAMIC_DRAW
+            );
+        }
+        
+        /// TODO! Make this generic, it very much is not.
+        pub fn draw(self: *const Self, matrix: *const Matrix4x4) void {
+            self.bind();
+            
+            const sampler = self.shader.getUniform("texture_id");
+            const transform = self.shader.getUniform("transform");
+            c.glUniform1i(sampler, 0);
+            
+            c.glUniformMatrix4fv(transform, 1, c.GL_TRUE, @ptrCast(&matrix.data));
+            
+            c.glDrawArrays(c.GL_TRIANGLES, 0, @intCast(self.vertices.items.len));
+        }
+        
+        fn bind(self: *const Self) void {
+            c.glBindBuffer(c.GL_ARRAY_BUFFER, self.id);
+            if (self.texture) |tex| tex.bind();
+            self.shader.bind();
+            self.layout();
+        }
+        
+        fn layout(self: *const Self) void {
+            _ = self;
+            const mirror = @typeInfo(V);
+            
+            switch (mirror) {
+                .Struct => |v| {
+                    if (v.layout != .Packed)
+                        @compileError("Only packed structs can be vertices");
+                    
+                    inline for (v.fields, 0..) |field, i| {
+                        const info = @typeInfo(field.type);
+                        
+                        c.glVertexAttribPointer(
+                            i,
+                            info.Struct.fields.len,
+                            c.GL_FLOAT,
+                            c.GL_FALSE,
+                            @sizeOf(V),
+                            @ptrFromInt(@offsetOf(V, field.name))
+                        );
+                        c.glEnableVertexAttribArray(i);
+                    }
+                    
+                },
+                else => @compileError("Only structs can be passed to OpenGL")
+            }
+            
+        }
+        
+        /// TODO! Make this generic.
+        pub fn sort(self: *Self, x: f32, y: f32, z: f32) void {
+            const triangles: [*][3]V = @ptrCast(self.vertices.items.ptr);
+            const len = self.vertices.items.len / 3;
+            const slice = triangles[0..len];
+            
+            const camera = @Vector(3, f32) { x, y, z };
+            
+            std.sort.heap([3]V, slice, camera, triCompare);
+        }
+        
+        fn triCompare(pos: @Vector(3, f32), lhs: [3]V, rhs: [3]V) bool {
+            return triDistance(pos, lhs) > triDistance(pos, rhs);
+        }
+        
+        fn triDistance(pos: @Vector(3, f32), tri: [3]V) f32 {
+            const v1 = @Vector(3, f32) {
+                tri[0].position.x, tri[0].position.y, tri[0].position.z
+            };
+            const v2 = @Vector(3, f32) {
+                tri[1].position.x, tri[1].position.y, tri[1].position.z
+            };
+            const v3 = @Vector(3, f32) {
+                tri[2].position.x, tri[2].position.y, tri[2].position.z
+            };
+            
+            const average = (v1 + v2 + v3) / @Vector(3, f32) { 3, 3, 3 };
+            const diff = average - pos;
+            return @sqrt(@reduce(.Add, diff * diff));
         }
     };
-    
-    pub fn create(allocator: std.mem.Allocator, shader: Shader, texture: Texture) TerrainDrawObject {
-        var buf: TerrainDrawObject = undefined;
-        buf.vertices = std.ArrayList(Vertex).init(allocator);
-        buf.shader = shader;
-        buf.texture = texture;
-        c.glGenBuffers(1, &buf.id);
-        
-        buf.bind();
-        buf.layout();
-        return buf;
-    }
-    
-    pub fn destroy(self: *TerrainDrawObject) void {
-        c.glDeleteBuffers(1, &self.id);
-        self.vertices.deinit();
-        
-        self.texture.destroy();
-        self.shader.destroy();
-    }
-    
-    pub fn sort(self: *TerrainDrawObject, x: f32, y: f32, z: f32) void {
-        const triangles: [*][3]Vertex = @ptrCast(self.vertices.items.ptr);
-        const len = self.vertices.items.len / 3;
-        const slice = triangles[0..len];
-        
-        const camera = @Vector(3, f32) { x, y, z };
-        
-        std.sort.heap([3]Vertex, slice, camera, triCompare);
-    }
-    
-    fn triCompare(pos: @Vector(3, f32), lhs: [3]Vertex, rhs: [3]Vertex) bool {
-        return triDistance(pos, lhs) > triDistance(pos, rhs);
-    }
-    
-    fn triDistance(pos: @Vector(3, f32), tri: [3]Vertex) f32 {
-        const v1 = @Vector(3, f32) {
-            tri[0].position.x, tri[0].position.y, tri[0].position.z
-        };
-        const v2 = @Vector(3, f32) {
-            tri[1].position.x, tri[1].position.y, tri[1].position.z
-        };
-        const v3 = @Vector(3, f32) {
-            tri[2].position.x, tri[2].position.y, tri[2].position.z
-        };
-        
-        const average = (v1 + v2 + v3) / @Vector(3, f32) { 3, 3, 3 };
-        const diff = average - pos;
-        return @sqrt(@reduce(.Add, diff * diff));
-    }
-    
-    /// Update the buffer on the GPU side with the local CPU data.
-    pub fn sync(self: *const TerrainDrawObject) void {
-        self.bind();
-        c.glBufferData(
-            c.GL_ARRAY_BUFFER,
-            @intCast(self.vertices.items.len * @sizeOf(Vertex)),
-            self.vertices.items.ptr,
-            c.GL_DYNAMIC_DRAW
-        );
-    }
-    
-    pub fn bind(self: *const TerrainDrawObject) void {
-        c.glBindBuffer(c.GL_ARRAY_BUFFER, self.id);
-        self.texture.bind();
-        self.shader.bind();
-        self.layout();
-    }
-    
-    pub fn draw(self: *const TerrainDrawObject, matrix: *const Matrix4x4) void {
-        self.bind();
-        
-        const sampler = self.shader.getUniform("texture_id");
-        const transform = self.shader.getUniform("transform");
-        c.glUniform1i(sampler, 0);
-        
-        c.glUniformMatrix4fv(transform, 1, c.GL_TRUE, @ptrCast(&matrix.data));
-        
-        c.glDrawArrays(c.GL_TRIANGLES, 0, @intCast(self.vertices.items.len));
-    }
-    
-    fn layout(self: *const TerrainDrawObject) void {
-        _ = self;
-        c.glVertexAttribPointer(
-            0,
-            3,
-            c.GL_FLOAT,
-            c.GL_FALSE,
-            @sizeOf(Vertex),
-            @ptrFromInt(@offsetOf(Vertex, "position"))
-        );
-        c.glEnableVertexAttribArray(0);
-        
-        c.glVertexAttribPointer(
-            1,
-            2,
-            c.GL_FLOAT,
-            c.GL_FALSE,
-            @sizeOf(Vertex),
-            @ptrFromInt(@offsetOf(Vertex, "tex_coord"))
-        );
-        c.glEnableVertexAttribArray(1);
-        
-        c.glVertexAttribPointer(
-            2,
-            4,
-            c.GL_FLOAT,
-            c.GL_FALSE,
-            @sizeOf(Vertex),
-            @ptrFromInt(@offsetOf(Vertex, "color"))
-        );
-        c.glEnableVertexAttribArray(2);
-    }
-};
+}

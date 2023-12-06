@@ -11,6 +11,8 @@ pub fn main() !void {
     var world = try World.init();
     defer world.deinit();
     
+    engine.graphics.setClearColor(.{ .r = 0.52, .g = 0.67, .b = 0.97 });
+    
     while (window.update()) {
         window.clear();
         world.update();
