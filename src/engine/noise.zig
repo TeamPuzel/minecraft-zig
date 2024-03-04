@@ -33,9 +33,9 @@ inline fn randomGradient(vec: @Vector(2, i32)) @Vector(2, f32) {
     var b: u32 = @bitCast(vec[1]);
     
     a *%= 3284157443; 
-    b ^= a << s | a >> w-s;
+    b ^= a << s | a >> w - s;
     b *%= 1911520717;
-    a ^= b << s | b >> w-s;
+    a ^= b << s | b >> w - s;
     a *%= 2048419325;
     
     const c: u32 = 0;
