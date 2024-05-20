@@ -20,30 +20,30 @@ pub fn build(b: *std.Build) void {
         .name = "game",
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize
     });
     exe.linkLibC();
     
     if (builtin.os.tag == .windows) {
-        exe.addIncludePath(.{ .path = "lib/SDL2/include" });
-        exe.addIncludePath(.{ .path = "lib/SDL2_image/include" });
+        exe.addIncludePath(b.path("lib/SDL2/include"));
+        exe.addIncludePath(b.path("lib/SDL2_image/include"));
         
-        exe.addLibraryPath(.{ .path = "lib/SDL2/lib/x64" });
-        exe.addLibraryPath(.{ .path = "lib/SDL2_image/lib/x64" });
+        exe.addLibraryPath(b.path("lib/SDL2/lib/x64"));
+        exe.addLibraryPath(b.path("lib/SDL2_image/lib/x64"));
         
         exe.linkSystemLibrary("SDL2");
         exe.linkSystemLibrary("SDL2_image");
     } else if (builtin.os.tag == .macos) {
-        exe.addIncludePath(.{ .path = "/opt/homebrew/include" });
+        exe.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include" });
         
         exe.linkSystemLibrary("SDL2");
         exe.linkSystemLibrary("SDL2_image");
     }
-    exe.addIncludePath(.{ .path = "lib/glad/include" });
+    exe.addIncludePath(b.path("lib/glad/include"));
     exe.addCSourceFile(.{
-        .file = .{ .path = "lib/glad/src/glad.c" },
+        .file = b.path("lib/glad/src/glad.c"),
         .flags = &.{}
     });
     // exe.strip = true;
@@ -79,7 +79,7 @@ pub fn build(b: *std.Build) void {
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });

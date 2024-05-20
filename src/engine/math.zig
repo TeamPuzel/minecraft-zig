@@ -9,7 +9,7 @@ pub const Matrix4x4 = extern struct {
         noalias self:  *const Matrix4x4,
         noalias other: *const Matrix4x4
     ) Matrix4x4 {
-        @setFloatMode(.Optimized);
+        @setFloatMode(.optimized);
         
         const l1: @Vector(4, f32) = self.data[0];
         const l2: @Vector(4, f32) = self.data[1];
@@ -42,7 +42,7 @@ pub const Matrix4x4 = extern struct {
     pub const RotationAxis = enum { Pitch, Yaw, Roll };
     
     pub fn rotation(comptime axis: RotationAxis, angle: f32) Matrix4x4 {
-        const a = std.math.degreesToRadians(f32, angle);
+        const a = std.math.degreesToRadians(angle);
         return switch (axis) {
             .Pitch => .{ .data = .{
                 .{ 1, 0, 0, 0 },
@@ -86,7 +86,7 @@ pub const Matrix4x4 = extern struct {
     pub fn projection(w: f32, h: f32, fov: f32, near: f32, far: f32) Matrix4x4 {
         const aspect = h / w;
         const q = far / (far - near);
-        const f = 1 / @tan(std.math.degreesToRadians(f32, fov) / 2);
+        const f = 1 / @tan(std.math.degreesToRadians(fov) / 2);
         return .{ .data = .{
             .{ aspect * f, 0, 0, 0 },
             .{ 0, f, 0, 0 },

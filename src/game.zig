@@ -7,6 +7,7 @@ const Matrix4x4 = engine.math.Matrix4x4;
 
 const render_distance = 16;
 
+// Idea to implement entities - obj-c style retain/release
 pub const World = struct {
     // A hash map of all the chunks in the world.
     chunks: ChunkStorage,
@@ -14,7 +15,7 @@ pub const World = struct {
     /// from the camera entity.
     visible_chunks: ChunkCache,
     /// Currently the player, but this will eventually be a pointer to any
-    /// entity. This is just what the camera is attached to.
+    /// entity. It's the entity which the camera is attached to.
     player: Player,
     
     // TODO: The other properties are to be revised, multi-threading is required.

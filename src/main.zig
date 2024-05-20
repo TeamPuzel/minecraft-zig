@@ -3,7 +3,7 @@ const engine = @import("engine/engine.zig");
 const World = @import("game.zig").World;
 
 pub fn main() !void {
-    var window = try engine.Window.init("Minecraft");
+    const window = try engine.Window.init("Minecraft");
     defer window.deinit();
     
     window.lockCursor(true);

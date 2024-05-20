@@ -188,7 +188,7 @@ pub fn DrawObject(comptime V: type) type {
             
             switch (mirror) {
                 .Struct => |v| {
-                    if (v.layout != .Packed)
+                    if (v.layout != .@"packed")
                         @compileError("Only packed structs can be vertices");
                     
                     inline for (v.fields, 0..) |field, i| {

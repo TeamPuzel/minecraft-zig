@@ -14,10 +14,10 @@ pub const Window = struct {
     
     pub var shared: *Window = undefined;
     
-    const initial_width = 800;
-    const initial_height = 600;
-    
     pub fn init(name: [:0]const u8) !*Window {
+        const initial_width = 800;
+        const initial_height = 600;
+        
         if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) return error.InitializingSDL;
         _ = c.IMG_Init(c.IMG_INIT_PNG);
         _ = c.SDL_GL_LoadLibrary(null);
@@ -91,7 +91,7 @@ pub const Window = struct {
         return class_ptr;
     }
     
-    pub fn deinit(self: Window) void {
+    pub fn deinit(self: *Window) void {
         c.SDL_GL_DeleteContext(self.context);
         c.SDL_DestroyWindow(self.window);
         c.IMG_Quit();
@@ -190,6 +190,7 @@ pub const Color = packed struct {
     b: f32 = 0,
     a: f32 = 1,
     
+    pub const clear = Color { .r = 0, .g = 0, .b = 0, .a = 0 };
     pub const white = Color { .r = 1, .g = 1, .b = 1, .a = 1 };
     pub const black = Color { .r = 0, .g = 0, .b = 0, .a = 1 };
 };
