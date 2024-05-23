@@ -3,8 +3,10 @@ const std = @import("std");
 const engine = @import("engine/engine.zig");
 const assets = @import("assets/assets.zig");
 
+const TGAConstPtr = engine.image.TGAConstPtr;
 const Matrix4x4 = engine.math.Matrix4x4;
 
+const terrain = TGAConstPtr { .raw = assets.terrain_tga };
 const render_distance = 16;
 
 // Idea to implement entities - obj-c style retain/release
@@ -33,7 +35,7 @@ pub const World = struct {
             .mesh = TerrainDrawObject.create(
                 std.heap.c_allocator,
                 try engine.graphics.Shader.create(assets.terrain_vs, assets.terrain_fs),
-                try engine.graphics.Texture.create(assets.terrain)
+                try engine.graphics.Texture.createFrom(terrain)
             ),
             .player = .{},
             .timer = undefined

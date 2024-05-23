@@ -1,7 +1,9 @@
 
 const c = @import("c.zig");
 const std = @import("std");
+const image = @import("image.zig");
 
+const TGAConstPtr = image.TGAConstPtr;
 const Color = @import("engine.zig").Color;
 const Matrix4x4 = @import("math.zig").Matrix4x4;
 
@@ -72,20 +74,7 @@ inline fn compile(kind: ShaderSourceKind, src: [:0]const u8) !u32 {
 pub const Texture = packed struct {
     id: u32,
     
-    pub fn create(data: []const u8) !Texture {
-        // Load image
-        const rw = c.SDL_RWFromConstMem(data.ptr, @intCast(data.len));
-        defer _ = c.SDL_RWclose(rw);
-        
-        const temp_surface = c.IMG_Load_RW(rw, 0);
-        defer c.SDL_FreeSurface(temp_surface);
-        
-        const surface = c.SDL_ConvertSurfaceFormat(
-            temp_surface, c.SDL_PIXELFORMAT_RGBA32, 0
-        );
-        defer c.SDL_FreeSurface(surface);
-        
-        // Create texture
+    pub fn createFrom(img: TGAConstPtr) !Texture {
         var tex: Texture = undefined;
         c.glGenTextures(1, &tex.id);
         
@@ -95,12 +84,12 @@ pub const Texture = packed struct {
             c.GL_TEXTURE_2D,
             0,
             c.GL_RGBA,
-            surface.*.w,
-            surface.*.h,
+            img.getWidth(),
+            img.getHeight(),
             0,
-            c.GL_RGBA,
+            c.GL_BGRA,
             c.GL_UNSIGNED_BYTE,
-            surface.*.pixels
+            @ptrCast(img.asPixelSlice().ptr)
         );
         
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);

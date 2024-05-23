@@ -6,6 +6,7 @@ const c = @import("c.zig");
 pub const math = @import("math.zig");
 pub const noise = @import("noise.zig");
 pub const graphics = @import("graphics.zig");
+pub const image = @import("image.zig");
 
 pub const Window = struct {
     window: *c.SDL_Window,
@@ -22,7 +23,6 @@ pub const Window = struct {
         const initial_height = 600;
         
         if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0) return error.InitializingSDL;
-        _ = c.IMG_Init(c.IMG_INIT_PNG);
         _ = c.SDL_GL_LoadLibrary(null);
         
         const window = c.SDL_CreateWindow(
@@ -99,7 +99,6 @@ pub const Window = struct {
     pub fn deinit(self: *Window) void {
         c.SDL_GL_DeleteContext(self.context);
         c.SDL_DestroyWindow(self.window);
-        c.IMG_Quit();
         c.SDL_Quit();
         
         std.heap.c_allocator.destroy(Window.shared);

@@ -33,13 +33,6 @@ pub usingnamespace if (builtin.os.tag == .linux) struct {
     pub const SDL_INIT_EVENTS = @as(c_uint, 0x00004000);
     pub const SDL_INIT_SENSOR = @as(c_uint, 0x00008000);
     
-    pub const IMG_INIT_JPG: c_int = 1;
-    pub const IMG_INIT_PNG: c_int = 2;
-    pub const IMG_INIT_TIF: c_int = 4;
-    pub const IMG_INIT_WEBP: c_int = 8;
-    pub const IMG_INIT_JXL: c_int = 16;
-    pub const IMG_INIT_AVIF: c_int = 32;
-    
     pub const SDL_WINDOWPOS_CENTERED = SDL_WINDOWPOS_CENTERED_DISPLAY(@as(c_int, 0));
     pub inline fn SDL_WINDOWPOS_CENTERED_DISPLAY(X: anytype) @TypeOf(SDL_WINDOWPOS_CENTERED_MASK | X) {
         _ = &X;
@@ -88,8 +81,6 @@ pub usingnamespace if (builtin.os.tag == .linux) struct {
     
     pub const SDL_GL_CONTEXT_PROFILE_CORE = 1;
     
-    pub const SDL_PIXELFORMAT_RGBA32: c_int = 376840196;
-    
     pub usingnamespace scancodes;
     
     pub var SDL_Init:                  *const allowzero fn(flags: u32) callconv(.C) c_int = @ptrFromInt(0);
@@ -109,38 +100,6 @@ pub usingnamespace if (builtin.os.tag == .linux) struct {
     pub var SDL_GetKeyboardState:      *const allowzero fn(numkeys: [*c]c_int) callconv(.C) [*c]const u8 = @ptrFromInt(0);
     pub var SDL_GetRelativeMouseState: *const allowzero fn(x: [*c]c_int, y: [*c]c_int) callconv(.C) u32 = @ptrFromInt(0);
     pub var SDL_PollEvent:             *const allowzero fn(event: [*c]SDL_Event) callconv(.C) c_int = @ptrFromInt(0);
-    
-    // Stuff below can be dropped if I load assets in a manageable format like TGA.
-    pub const SDL_Surface = extern struct {
-        flags: u32 = @import("std").mem.zeroes(u32),
-        format: [*c]c_int = @import("std").mem.zeroes([*c]c_int),
-        w: c_int = @import("std").mem.zeroes(c_int),
-        h: c_int = @import("std").mem.zeroes(c_int),
-        pitch: c_int = @import("std").mem.zeroes(c_int),
-        pixels: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
-        userdata: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
-        locked: c_int = @import("std").mem.zeroes(c_int),
-        list_blitmap: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
-        clip_rect: SDL_Rect = @import("std").mem.zeroes(SDL_Rect),
-        map: ?*anyopaque = @import("std").mem.zeroes(?*anyopaque),
-        refcount: c_int = @import("std").mem.zeroes(c_int),
-    };
-    pub const SDL_Rect = extern struct {
-        x: c_int = @import("std").mem.zeroes(c_int),
-        y: c_int = @import("std").mem.zeroes(c_int),
-        w: c_int = @import("std").mem.zeroes(c_int),
-        h: c_int = @import("std").mem.zeroes(c_int),
-    };
-    pub const SDL_RWops = extern struct {}; // UNSAFE
-     
-    pub var SDL_ConvertSurfaceFormat: *const allowzero fn(src: [*c]SDL_Surface, pixel_format: u32, flags: u32) callconv(.C) [*c]SDL_Surface = @ptrFromInt(0);
-    pub var SDL_FreeSurface:          *const allowzero fn(surface: [*c]SDL_Surface) callconv(.C) void = @ptrFromInt(0);
-    pub var SDL_RWFromConstMem:       *const allowzero fn(mem: ?*const anyopaque, size: c_int) callconv(.C) [*c]SDL_RWops = @ptrFromInt(0);
-    pub var SDL_RWclose:              *const allowzero fn(context: [*c]SDL_RWops) callconv(.C) c_int = @ptrFromInt(0);
-    
-    pub var IMG_Init:                 *const allowzero fn(flags: c_int) callconv(.C) c_int = @ptrFromInt(0);
-    pub var IMG_Quit:                 *const allowzero fn() callconv(.C) void = @ptrFromInt(0);
-    pub var IMG_Load_RW:              *const allowzero fn(src: [*c]SDL_RWops, freesrc: c_int) callconv(.C) [*c]SDL_Surface = @ptrFromInt(0);
     
     pub fn loadLibraries() !void {
         const sdl = dlopen("libSDL2-2.0.so", RTLD_NOW) orelse return error.loadingLibrarySDL2;
@@ -162,17 +121,6 @@ pub usingnamespace if (builtin.os.tag == .linux) struct {
         SDL_GetKeyboardState      = @ptrCast(dlsym(sdl, "SDL_GetKeyboardState") orelse return error.function);
         SDL_GetRelativeMouseState = @ptrCast(dlsym(sdl, "SDL_GetRelativeMouseState") orelse return error.function);
         SDL_PollEvent             = @ptrCast(dlsym(sdl, "SDL_PollEvent") orelse return error.function);
-        
-        SDL_ConvertSurfaceFormat  = @ptrCast(dlsym(sdl, "SDL_ConvertSurfaceFormat") orelse return error.function); 
-        SDL_FreeSurface           = @ptrCast(dlsym(sdl, "SDL_FreeSurface") orelse return error.function);
-        SDL_RWFromConstMem        = @ptrCast(dlsym(sdl, "SDL_RWFromConstMem") orelse return error.function);
-        SDL_RWclose               = @ptrCast(dlsym(sdl, "SDL_RWclose") orelse return error.function);
-        
-        const img = dlopen("libSDL2_image-2.0.so.0", RTLD_NOW) orelse return error.loadingLibrarySDL2Image;
-        
-        IMG_Init                  = @ptrCast(dlsym(img, "IMG_Init") orelse return error.function);
-        IMG_Quit                  = @ptrCast(dlsym(img, "IMG_Quit") orelse return error.function);
-        IMG_Load_RW               = @ptrCast(dlsym(img, "IMG_Load_RW") orelse return error.function);
     }
     
     // pub const LoadError = error { library, function, variable };
