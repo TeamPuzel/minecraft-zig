@@ -102,28 +102,26 @@ pub usingnamespace if (builtin.os.tag == .linux) struct {
     pub var SDL_PollEvent:             *const allowzero fn(event: [*c]SDL_Event) callconv(.C) c_int = @ptrFromInt(0);
     
     pub fn loadLibraries() !void {
-        const sdl = dlopen("libSDL2-2.0.so", RTLD_NOW) orelse return error.loadingLibrarySDL2;
+        const sdl = dlopen("libSDL2-2.0.so", RTLD_NOW) orelse return error.LoadingLibrarySDL2;
         
-        SDL_Init                  = @ptrCast(dlsym(sdl, "SDL_Init") orelse return error.function);
-        SDL_GL_LoadLibrary        = @ptrCast(dlsym(sdl, "SDL_GL_LoadLibrary") orelse return error.function);
-        SDL_CreateWindow          = @ptrCast(dlsym(sdl, "SDL_CreateWindow") orelse return error.function);
-        SDL_SetWindowMinimumSize  = @ptrCast(dlsym(sdl, "SDL_SetWindowMinimumSize") orelse return error.function);
-        SDL_GL_SetAttribute       = @ptrCast(dlsym(sdl, "SDL_GL_SetAttribute") orelse return error.function);
-        SDL_GL_SetSwapInterval    = @ptrCast(dlsym(sdl, "SDL_GL_SetSwapInterval") orelse return error.function);
-        SDL_GL_CreateContext      = @ptrCast(dlsym(sdl, "SDL_GL_CreateContext") orelse return error.function);
-        SDL_GL_GetProcAddress     = @ptrCast(dlsym(sdl, "SDL_GL_GetProcAddress") orelse return error.function);
-        SDL_GL_GetDrawableSize    = @ptrCast(dlsym(sdl, "SDL_GL_GetDrawableSize") orelse return error.function);
-        SDL_Quit                  = @ptrCast(dlsym(sdl, "SDL_Quit") orelse return error.function);
-        SDL_DestroyWindow         = @ptrCast(dlsym(sdl, "SDL_DestroyWindow") orelse return error.function);
-        SDL_GL_DeleteContext      = @ptrCast(dlsym(sdl, "SDL_GL_DeleteContext") orelse return error.function);
-        SDL_SetRelativeMouseMode  = @ptrCast(dlsym(sdl, "SDL_SetRelativeMouseMode") orelse return error.function);
-        SDL_GL_SwapWindow         = @ptrCast(dlsym(sdl, "SDL_GL_SwapWindow") orelse return error.function);
-        SDL_GetKeyboardState      = @ptrCast(dlsym(sdl, "SDL_GetKeyboardState") orelse return error.function);
-        SDL_GetRelativeMouseState = @ptrCast(dlsym(sdl, "SDL_GetRelativeMouseState") orelse return error.function);
-        SDL_PollEvent             = @ptrCast(dlsym(sdl, "SDL_PollEvent") orelse return error.function);
+        SDL_Init                  = @ptrCast(dlsym(sdl, "SDL_Init") orelse return error.Function);
+        SDL_GL_LoadLibrary        = @ptrCast(dlsym(sdl, "SDL_GL_LoadLibrary") orelse return error.Function);
+        SDL_CreateWindow          = @ptrCast(dlsym(sdl, "SDL_CreateWindow") orelse return error.Function);
+        SDL_SetWindowMinimumSize  = @ptrCast(dlsym(sdl, "SDL_SetWindowMinimumSize") orelse return error.Function);
+        SDL_GL_SetAttribute       = @ptrCast(dlsym(sdl, "SDL_GL_SetAttribute") orelse return error.Function);
+        SDL_GL_SetSwapInterval    = @ptrCast(dlsym(sdl, "SDL_GL_SetSwapInterval") orelse return error.Function);
+        SDL_GL_CreateContext      = @ptrCast(dlsym(sdl, "SDL_GL_CreateContext") orelse return error.Function);
+        SDL_GL_GetProcAddress     = @ptrCast(dlsym(sdl, "SDL_GL_GetProcAddress") orelse return error.Function);
+        SDL_GL_GetDrawableSize    = @ptrCast(dlsym(sdl, "SDL_GL_GetDrawableSize") orelse return error.Function);
+        SDL_Quit                  = @ptrCast(dlsym(sdl, "SDL_Quit") orelse return error.Function);
+        SDL_DestroyWindow         = @ptrCast(dlsym(sdl, "SDL_DestroyWindow") orelse return error.Function);
+        SDL_GL_DeleteContext      = @ptrCast(dlsym(sdl, "SDL_GL_DeleteContext") orelse return error.Function);
+        SDL_SetRelativeMouseMode  = @ptrCast(dlsym(sdl, "SDL_SetRelativeMouseMode") orelse return error.Function);
+        SDL_GL_SwapWindow         = @ptrCast(dlsym(sdl, "SDL_GL_SwapWindow") orelse return error.Function);
+        SDL_GetKeyboardState      = @ptrCast(dlsym(sdl, "SDL_GetKeyboardState") orelse return error.Function);
+        SDL_GetRelativeMouseState = @ptrCast(dlsym(sdl, "SDL_GetRelativeMouseState") orelse return error.Function);
+        SDL_PollEvent             = @ptrCast(dlsym(sdl, "SDL_PollEvent") orelse return error.Function);
     }
-    
-    // pub const LoadError = error { library, function, variable };
 } else struct {};
 
 const scancodes = struct {

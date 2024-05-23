@@ -111,8 +111,8 @@ pub const World = struct {
     }
     
     pub fn draw(self: *const World) void {
-        const width: f32 = @floatFromInt(engine.Window.shared.width);
-        const height: f32 = @floatFromInt(engine.Window.shared.height);
+        const width: f32 = @floatFromInt(engine.getWidth());
+        const height: f32 = @floatFromInt(engine.getHeight());
         
         const mat = Matrix4x4.translation(
                 -self.player.super.position.x,
