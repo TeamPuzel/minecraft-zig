@@ -1,5 +1,6 @@
 
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("c.zig");
 
 pub const math = @import("math.zig");
@@ -15,6 +16,8 @@ pub const Window = struct {
     pub var shared: *Window = undefined;
     
     pub fn init(name: [:0]const u8) !*Window {
+        if (builtin.os.tag == .linux) try c.loadLibraries();
+        
         const initial_width = 800;
         const initial_height = 600;
         
@@ -45,7 +48,9 @@ pub const Window = struct {
         
         const context = c.SDL_GL_CreateContext(window);
         
-        _ = c.gladLoadGLLoader(&c.SDL_GL_GetProcAddress);
+        const os = @import("builtin").os.tag;
+        if (os == .linux) _ = c.gladLoadGLLoader(c.SDL_GL_GetProcAddress) // On linux it is already a pointer
+        else _ = c.gladLoadGLLoader(&c.SDL_GL_GetProcAddress);
         
         std.log.debug(
             \\OpenGL initialized successfully.

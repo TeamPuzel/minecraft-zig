@@ -144,7 +144,7 @@ pub const Chunk = struct {
     /// however they remain valid for unloaded chunks - to check if a generated
     /// chunk is loaded for rendering purposes check `mesh` instead, as
     /// it can be used to cull faces more efficiently at chunk boundaries.
-    neighbors: packed struct {
+    neighbors: extern struct {
         north: ?*Chunk = null,
         south: ?*Chunk = null,
         east:  ?*Chunk = null,

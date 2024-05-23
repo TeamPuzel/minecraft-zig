@@ -26,7 +26,9 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
     
-    if (builtin.os.tag == .windows) {
+    if (target.result.os.tag == .linux) {
+        // Linking at runtime
+    } else if (target.result.os.tag == .windows) {
         exe.addIncludePath(b.path("lib/SDL2/include"));
         exe.addIncludePath(b.path("lib/SDL2_image/include"));
         
@@ -35,7 +37,7 @@ pub fn build(b: *std.Build) void {
         
         exe.linkSystemLibrary("SDL2");
         exe.linkSystemLibrary("SDL2_image");
-    } else if (builtin.os.tag == .macos) {
+    } else if (target.result.os.tag == .macos) {
         exe.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include" });
         
         exe.linkSystemLibrary("SDL2");
