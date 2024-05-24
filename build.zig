@@ -18,37 +18,23 @@ pub fn build(b: *std.Build) void {
     
     const exe = b.addExecutable(.{
         .name = "game",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
         .root_source_file = b.path("src/main.zig"),
         .target = target,
-        .optimize = optimize
+        .optimize = optimize,
+        .strip = false
     });
     exe.linkLibC();
-    
-    if (target.result.os.tag == .linux) {
-        // Linking at runtime
-    } else if (target.result.os.tag == .windows) {
-        exe.addIncludePath(b.path("lib/SDL2/include"));
-        exe.addIncludePath(b.path("lib/SDL2_image/include"));
-        
-        exe.addLibraryPath(b.path("lib/SDL2/lib/x64"));
-        exe.addLibraryPath(b.path("lib/SDL2_image/lib/x64"));
-        
-        exe.linkSystemLibrary("SDL2");
-        exe.linkSystemLibrary("SDL2_image");
-    } else if (target.result.os.tag == .macos) {
-        exe.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include" });
-        
-        exe.linkSystemLibrary("SDL2");
-        exe.linkSystemLibrary("SDL2_image");
-    }
-    exe.addIncludePath(b.path("lib/glad/include"));
-    exe.addCSourceFile(.{
-        .file = b.path("lib/glad/src/glad.c"),
-        .flags = &.{}
-    });
-    // exe.strip = true;
+    exe.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include" });
+    exe.addIncludePath(b.path("lib/mac/wgpu"));
+    exe.addLibraryPath(b.path("lib/mac/wgpu"));
+    exe.linkSystemLibrary("sdl2");
+    exe.linkSystemLibrary2("wgpu_native", .{ .preferred_link_mode = .dynamic });
+    // objc
+    exe.linkSystemLibrary("objc");
+    exe.linkFramework("Foundation");
+    exe.linkFramework("CoreGraphics");
+    exe.linkFramework("Cocoa");
+    exe.linkFramework("Metal");
     
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

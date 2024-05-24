@@ -1,9 +1,9 @@
 const std = @import("std");
-const engine = @import("core/engine.zig");
+const root = @import("root");
 
-const BlockVertex = @import("root").BlockVertex;
-const TGAConstPtr = engine.image.TGAConstPtr;
-const Matrix4x4 = engine.math.Matrix4x4;
+const BlockVertex = root.BlockVertex;
+const TGAConstPtr = root.image.TGAConstPtr;
+const Matrix4x4 = root.math.Matrix4x4;
 const Array = std.ArrayList;
 
 const render_distance = 2;
@@ -85,8 +85,8 @@ pub const World = struct {
     }
     
     pub fn getPrimaryMatrix(self: *const World) Matrix4x4 {
-        const width: f32 = @floatFromInt(engine.getWidth());
-        const height: f32 = @floatFromInt(engine.getHeight());
+        const width: f32 = @floatFromInt(root.getWidth());
+        const height: f32 = @floatFromInt(root.getHeight());
         
         return Matrix4x4.translation(
             -self.player.super.position.x,
@@ -152,9 +152,9 @@ pub const Chunk = struct {
                 const fx: f32 = @floatFromInt(x);
                 const fz: f32 = @floatFromInt(z);
                 
-                const octave1 = engine.noise.perlin((fix + 16 * fx) * 0.02, (fiz + 16 * fz) * 0.02);
-                const octave2 = engine.noise.perlin((fix + 16 * fx) * 0.03, (fiz + 16 * fz) * 0.03);
-                const octave3 = engine.noise.perlin((fix + 16 * fx) * 0.1, (fiz + 16 * fz) * 0.1);
+                const octave1 = root.noise.perlin((fix + 16 * fx) * 0.02, (fiz + 16 * fz) * 0.02);
+                const octave2 = root.noise.perlin((fix + 16 * fx) * 0.03, (fiz + 16 * fz) * 0.03);
+                const octave3 = root.noise.perlin((fix + 16 * fx) * 0.1, (fiz + 16 * fz) * 0.1);
                 const height = octave1 / 3 + ((octave2 + octave3) / 20);
                 
                 for (0..chunk_height) |iy| {
@@ -486,18 +486,18 @@ pub const Player = extern struct {
     
     fn update(self: *Player, world: *World) callconv(.C) void {
         // Mouse look
-        const mouse = engine.input.relativeMouse();
+        const mouse = root.relativeMouse();
         self.super.orientation.yaw += mouse.x / 10;
         self.super.orientation.pitch += mouse.y / 10;
         self.super.orientation.pitch = 
             std.math.clamp(self.super.orientation.pitch, -90, 90);
             
         // Basic, camera unaligned movement
-        if (engine.input.key(.w)) self.super.position.z          += 0.01 * world.delta;
-        if (engine.input.key(.a)) self.super.position.x          -= 0.01 * world.delta;
-        if (engine.input.key(.s)) self.super.position.z          -= 0.01 * world.delta;
-        if (engine.input.key(.d)) self.super.position.x          += 0.01 * world.delta;
-        if (engine.input.key(.space)) self.super.position.y      += 0.01 * world.delta;
-        if (engine.input.key(.left_shift)) self.super.position.y -= 0.01 * world.delta;
+        if (root.key(.w)) self.super.position.z          += 0.01 * world.delta;
+        if (root.key(.a)) self.super.position.x          -= 0.01 * world.delta;
+        if (root.key(.s)) self.super.position.z          -= 0.01 * world.delta;
+        if (root.key(.d)) self.super.position.x          += 0.01 * world.delta;
+        if (root.key(.space)) self.super.position.y      += 0.01 * world.delta;
+        if (root.key(.left_shift)) self.super.position.y -= 0.01 * world.delta;
     }
 };
