@@ -6,7 +6,7 @@ const TGAConstPtr = engine.image.TGAConstPtr;
 const Matrix4x4 = engine.math.Matrix4x4;
 const Array = std.ArrayList;
 
-const render_distance = 16;
+const render_distance = 2;
 
 // Idea to implement entities - obj-c style retain/release
 /// NOTE: The `World` requires a stable identity.
@@ -19,7 +19,7 @@ pub const World = struct {
     /// Currently the player, but this will eventually be a pointer to any
     /// entity. It's the entity which the camera is attached to.
     player: Player,
-    
+    sorted_at: Position = .{ .x = 0, .y = 0, .z = 0 },
     timer: std.time.Timer,
     delta: f32 = 0,
     
@@ -69,14 +69,19 @@ pub const World = struct {
         
         self.player.super.update(&self.player, self);
         
+        if (self.player.super.position.distanceTo(self.sorted_at) > 1) {
+            for (self.visible_chunks.items) |chunk| chunk.sort();
+            self.sorted_at = self.player.super.position;
+        }
+        
         std.sort.heap(*const Chunk, self.visible_chunks.items, self.player.super.position, chunkDistanceCompare);
         
         _ = self.timer.lap();
     }
     
-    fn chunkDistanceCompare(ctx: Position, lhs: *const Chunk, rhs: *const Chunk) bool {
-        return ctx.distanceTo(.{ .x = @floatFromInt(lhs.x), .y = 0, .z = @floatFromInt(lhs.z) }) >
-               ctx.distanceTo(.{ .x = @floatFromInt(rhs.x), .y = 0, .z = @floatFromInt(rhs.z) });
+    fn chunkDistanceCompare(pos: Position, lhs: *const Chunk, rhs: *const Chunk) bool {
+        return pos.distanceTo(.{ .x = @floatFromInt(lhs.x), .y = 0, .z = @floatFromInt(lhs.z) }) >
+               pos.distanceTo(.{ .x = @floatFromInt(rhs.x), .y = 0, .z = @floatFromInt(rhs.z) });
     }
     
     pub fn getPrimaryMatrix(self: *const World) Matrix4x4 {
@@ -97,16 +102,6 @@ pub const World = struct {
         var buf = Array(BlockVertex).init(std.heap.c_allocator);
         for (self.visible_chunks.items) |chunk| try buf.appendSlice(chunk.*.mesh.items);
         return buf;
-        
-        // TODO: Optimize, currently unusable
-        // Or is it? it seems like the sudden performance drop to a slide show is OpenGL, not sorting.
-        // Sort individual chunks though.
-        // 
-        // self.mesh.sort(
-        //     self.player.super.position.x,
-        //     self.player.super.position.y,
-        //     self.player.super.position.z
-        // );
     }
     
     pub fn isOpaqueAt(self: *const World, x: i32, y: i32, z: i32) bool {
@@ -309,72 +304,76 @@ pub const Block = struct {
         
         const s = half_side;
         const c = tex_uvc;
-        const o: f32 = if (self.tag == .water) 0.4 else 1.0; // HACK :)
+        
+        const r: f32 = if (self.tag == .grass) 1.0 else 1.0; // HACK :)
+        const g: f32 = if (self.tag == .grass) 1.0 else 1.0; // HACK :)
+        const b: f32 = if (self.tag == .grass) 1.0 else 1.0; // HACK :)
+        const a: f32 = if (self.tag == .water) 1.0 else 1.0; // HACK :)
         
         // Back
         if (faces.north) {
             try vertices.appendSlice(&.{
-                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       1, 1, 1, o), // TR
-                BlockVertex.init( s + x,  s + y,  s + z,   c * off.back.x,     c * off.back.y,       1, 1, 1, o), // TL
-                BlockVertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       1, 1, 1, o), // TR
-                BlockVertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.back.x + c, c * off.back.y + c,   1, 1, 1, o)  // BR
+                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       r, g, b, a), // TR
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.back.x,     c * off.back.y,       r, g, b, a), // TL
+                BlockVertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   r, g, b, a), // BL
+                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       r, g, b, a), // TR
+                BlockVertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   r, g, b, a), // BL
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.back.x + c, c * off.back.y + c,   r, g, b, a)  // BR
             });
         }
         // Front
         if (faces.south) {
             try vertices.appendSlice(&.{
-                BlockVertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, o), // TR
-                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, o), // TL
-                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, o), // TR
-                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init( s + x, -s + y, -s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, o)  // BR
+                BlockVertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       r, g, b, a), // TR
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y,       r, g, b, a), // TL
+                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   r, g, b, a), // BL
+                BlockVertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       r, g, b, a), // TR
+                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   r, g, b, a), // BL
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.front.x + c, c * off.front.y + c,   r, g, b, a)  // BR
             });
         }
         // Right
         if (faces.east) {
             try vertices.appendSlice(&.{
-                BlockVertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       1, 1, 1, o), // TR
-                BlockVertex.init( s + x,  s + y, -s + z,   c * off.right.x,     c * off.right.y,       1, 1, 1, o), // TL
-                BlockVertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       1, 1, 1, o), // TR
-                BlockVertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init( s + x, -s + y,  s + z,   c * off.right.x + c, c * off.right.y + c,   1, 1, 1, o)  // BR
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       r, g, b, a), // TR
+                BlockVertex.init( s + x,  s + y, -s + z,   c * off.right.x,     c * off.right.y,       r, g, b, a), // TL
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   r, g, b, a), // BL
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       r, g, b, a), // TR
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   r, g, b, a), // BL
+                BlockVertex.init( s + x, -s + y,  s + z,   c * off.right.x + c, c * off.right.y + c,   r, g, b, a)  // BR
             });
         }
         // Left
         if (faces.west) {
             try vertices.appendSlice(&.{
-                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       1, 1, 1, o), // TR
-                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.left.x,     c * off.left.y,       1, 1, 1, o), // TL
-                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       1, 1, 1, o), // TR
-                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.left.x + c, c * off.left.y + c,   1, 1, 1, o)  // BR
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       r, g, b, a), // TR
+                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.left.x,     c * off.left.y,       r, g, b, a), // TL
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   r, g, b, a), // BL
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       r, g, b, a), // TR
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   r, g, b, a), // BL
+                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.left.x + c, c * off.left.y + c,   r, g, b, a)  // BR
             });
         }
         // Top
         if (faces.up) {
             try vertices.appendSlice(&.{
-                BlockVertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       1, 1, 1, o), // TR
-                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.top.x,     c * off.top.y,       1, 1, 1, o), // TL
-                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       1, 1, 1, o), // TR
-                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init( s + x,  s + y, -s + z,   c * off.top.x + c, c * off.top.y + c,   1, 1, 1, o)  // BR
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       r, g, b, a), // TR
+                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.top.x,     c * off.top.y,       r, g, b, a), // TL
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   r, g, b, a), // BL
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       r, g, b, a), // TR
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   r, g, b, a), // BL
+                BlockVertex.init( s + x,  s + y, -s + z,   c * off.top.x + c, c * off.top.y + c,   r, g, b, a)  // BR
             });
         }
         // Bottom
         if (faces.down) {
             try vertices.appendSlice(&.{
-                BlockVertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       1, 1, 1, o), // TR
-                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.bottom.x,     c * off.bottom.y,       1, 1, 1, o), // TL
-                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       1, 1, 1, o), // TR
-                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   1, 1, 1, o), // BL
-                BlockVertex.init( s + x, -s + y,  s + z,   c * off.bottom.x + c, c * off.bottom.y + c,   1, 1, 1, o)  // BR
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       r, g, b, a), // TR
+                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.bottom.x,     c * off.bottom.y,       r, g, b, a), // TL
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   r, g, b, a), // BL
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       r, g, b, a), // TR
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   r, g, b, a), // BL
+                BlockVertex.init( s + x, -s + y,  s + z,   c * off.bottom.x + c, c * off.bottom.y + c,   r, g, b, a)  // BR
             });
         }
     }
@@ -438,7 +437,7 @@ pub const Block = struct {
     
     pub const water = Block {
         .tag = .water,
-        .is_transparent = true,
+        .is_transparent = false,
         .atlas_offsets = .{
             .front  = .{ .x = 13, .y = 12 },
             .back   = .{ .x = 13, .y = 12 },
@@ -451,6 +450,8 @@ pub const Block = struct {
 };
 
 // MARK: - Entities ----------------------------------------------------------------------------------------------------
+
+pub const gravity = 0.2;
 
 pub const Position = extern struct {
     x: f32 = 0, y: f32 = 0, z: f32 = 0,

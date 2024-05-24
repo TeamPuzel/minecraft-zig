@@ -143,6 +143,16 @@ pub fn VertexBuffer(comptime V: type) type {
             );
         }
         
+        pub fn orphan(self: *const Self) void {
+        self.bind();
+        c.glBufferData(
+            c.GL_ARRAY_BUFFER,
+            @intCast(self.vertices.items.len * @sizeOf(V)),
+            null,
+            c.GL_DYNAMIC_DRAW
+        );
+        }
+        
         pub fn draw(self: *const Self) void {
             self.bind();
             c.glDrawArrays(c.GL_TRIANGLES, 0, @intCast(self.vertices.items.len));
