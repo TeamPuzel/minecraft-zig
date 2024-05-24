@@ -1,15 +1,15 @@
-
 const std = @import("std");
-const engine = @import("engine/engine.zig");
-const assets = @import("assets/assets.zig");
+const engine = @import("core/engine.zig");
 
+const BlockVertex = @import("root").BlockVertex;
 const TGAConstPtr = engine.image.TGAConstPtr;
 const Matrix4x4 = engine.math.Matrix4x4;
+const Array = std.ArrayList;
 
-const terrain = TGAConstPtr { .raw = assets.terrain_tga };
 const render_distance = 16;
 
 // Idea to implement entities - obj-c style retain/release
+/// NOTE: The `World` requires a stable identity.
 pub const World = struct {
     // A hash map of all the chunks in the world.
     chunks: ChunkStorage,
@@ -20,23 +20,17 @@ pub const World = struct {
     /// entity. It's the entity which the camera is attached to.
     player: Player,
     
-    // TODO: The other properties are to be revised, multi-threading is required.
-    mesh: TerrainDrawObject,
     timer: std.time.Timer,
     delta: f32 = 0,
     
     pub const ChunkStorage = std.AutoArrayHashMap(ChunkPosition, *Chunk);
-    pub const ChunkCache = std.ArrayList(*Chunk);
+    pub const ChunkCache = Array(*Chunk);
     
-    pub fn init() !World {
-        var self = World {
+    pub fn init() !*World {
+        var self = try std.heap.c_allocator.create(World);
+        self.* = World {
             .chunks = ChunkStorage.init(std.heap.c_allocator),
             .visible_chunks = ChunkCache.init(std.heap.c_allocator),
-            .mesh = TerrainDrawObject.create(
-                std.heap.c_allocator,
-                try engine.graphics.Shader.create(assets.terrain_vs, assets.terrain_fs),
-                try engine.graphics.Texture.createFrom(terrain)
-            ),
             .player = .{},
             .timer = undefined
         };
@@ -46,28 +40,12 @@ pub const World = struct {
                 // Generate chunk
                 try self.chunks.put(.{ .x = ix, .z = iz }, try std.heap.c_allocator.create(Chunk));
                 const chunk = self.chunks.get(.{ .x = ix, .z = iz }).?;
-                chunk.* = Chunk.generate(ix, iz);
-                
-                if (self.chunks.get(.{ .x = ix + 1, .z = iz })) |n| {
-                    n.neighbors.west = chunk;
-                    chunk.neighbors.east = n;
-                }
-                if (self.chunks.get(.{ .x = ix - 1, .z = iz })) |n| {
-                    n.neighbors.east = chunk;
-                    chunk.neighbors.west = n;
-                }
-                if (self.chunks.get(.{ .x = ix, .z = iz + 1 })) |n| {
-                    n.neighbors.south = chunk;
-                    chunk.neighbors.north = n;
-                }
-                if (self.chunks.get(.{ .x = ix, .z = iz - 1 })) |n| {
-                    n.neighbors.north = chunk;
-                    chunk.neighbors.south = n;
-                }
+                chunk.* = Chunk.generate(self, ix, iz);
+                try self.visible_chunks.append(chunk);
             }
         }
         
-        try self.remesh();
+        for (self.visible_chunks.items) |chunk| try chunk.remesh();
         
         self.timer = try std.time.Timer.start();
         
@@ -80,7 +58,7 @@ pub const World = struct {
         
         self.visible_chunks.deinit();
         self.chunks.deinit();
-        self.mesh.destroy();
+        std.heap.c_allocator.destroy(self);
     }
     
     pub fn update(self: *World) void {
@@ -91,39 +69,62 @@ pub const World = struct {
         
         self.player.super.update(&self.player, self);
         
+        std.sort.heap(*const Chunk, self.visible_chunks.items, self.player.super.position, chunkDistanceCompare);
+        
         _ = self.timer.lap();
     }
     
-    fn remesh(self: *World) !void {
-        var iter = self.chunks.iterator();
-        while (iter.next()) |chunk| {
-            try chunk.value_ptr.*.mesh(&self.mesh);
-        }
+    fn chunkDistanceCompare(ctx: Position, lhs: *const Chunk, rhs: *const Chunk) bool {
+        return ctx.distanceTo(.{ .x = @floatFromInt(lhs.x), .y = 0, .z = @floatFromInt(lhs.z) }) >
+               ctx.distanceTo(.{ .x = @floatFromInt(rhs.x), .y = 0, .z = @floatFromInt(rhs.z) });
+    }
+    
+    pub fn getPrimaryMatrix(self: *const World) Matrix4x4 {
+        const width: f32 = @floatFromInt(engine.getWidth());
+        const height: f32 = @floatFromInt(engine.getHeight());
+        
+        return Matrix4x4.translation(
+            -self.player.super.position.x,
+            -self.player.super.position.y,
+            -self.player.super.position.z
+        )
+        .mul(&Matrix4x4.rotation(.Yaw, self.player.super.orientation.yaw))
+        .mul(&Matrix4x4.rotation(.Pitch, self.player.super.orientation.pitch))
+        .mul(&Matrix4x4.projection(width, height, 80, 0.1, 1000));
+    }
+    
+    pub fn getUnifiedMesh(self: *const World) !Array(BlockVertex) {
+        var buf = Array(BlockVertex).init(std.heap.c_allocator);
+        for (self.visible_chunks.items) |chunk| try buf.appendSlice(chunk.*.mesh.items);
+        return buf;
         
         // TODO: Optimize, currently unusable
+        // Or is it? it seems like the sudden performance drop to a slide show is OpenGL, not sorting.
+        // Sort individual chunks though.
+        // 
         // self.mesh.sort(
         //     self.player.super.position.x,
         //     self.player.super.position.y,
         //     self.player.super.position.z
         // );
-        
-        self.mesh.sync();
     }
     
-    pub fn draw(self: *const World) void {
-        const width: f32 = @floatFromInt(engine.getWidth());
-        const height: f32 = @floatFromInt(engine.getHeight());
+    pub fn isOpaqueAt(self: *const World, x: i32, y: i32, z: i32) bool {
+        const cx = @divFloor(x, chunk_side);
+        const cz = @divFloor(z, chunk_side);
         
-        const mat = Matrix4x4.translation(
-                -self.player.super.position.x,
-                -self.player.super.position.y,
-                -self.player.super.position.z
-            )
-            .mul(&Matrix4x4.rotation(.Yaw, self.player.super.orientation.yaw))
-            .mul(&Matrix4x4.rotation(.Pitch, self.player.super.orientation.pitch))
-            .mul(&Matrix4x4.projection(width, height, 80, 0.1, 1000));
+        const lx = @mod((@mod(x, chunk_side) + chunk_side), chunk_side);
+        const ly = y;
+        const lz = @mod((@mod(z, chunk_side) + chunk_side), chunk_side);
         
-        self.mesh.draw(&mat);
+        const ulx: usize = @intCast(lx);
+        const uly: usize = @intCast(ly);
+        const ulz: usize = @intCast(lz);
+        
+        const chunk = self.chunks.get(.{ .x = cx, .z = cz }) orelse return true;
+        // const chunk.isGenerated else { return true }
+        const block = chunk.maybeGetBlockAt(ulx, uly, ulz) orelse return true;
+        return block.atlas_offsets != null and !block.is_transparent;
     }
 };
 
@@ -134,34 +135,19 @@ pub const chunk_side = 16;
 pub const chunk_height = 256;
 
 pub const Chunk = struct {
+    world: *World,
     x: i32,
     z: i32,
-    /// A large chunk of memory storing block pointers.
     blocks: [chunk_side][chunk_height][chunk_side]*const Block,
+    mesh: Array(BlockVertex),
     
-    /// Quite often, especially when rendering, chunks need to be able to
-    /// efficiently refer to neighboring chunks. This is important because
-    /// chunks are stored in a hash map. It is important not to invalidate
-    /// these pointers. They are `null` if the chunk is not generated yet,
-    /// however they remain valid for unloaded chunks - to check if a generated
-    /// chunk is loaded for rendering purposes check `mesh` instead, as
-    /// it can be used to cull faces more efficiently at chunk boundaries.
-    neighbors: extern struct {
-        north: ?*Chunk = null,
-        south: ?*Chunk = null,
-        east:  ?*Chunk = null,
-        west:  ?*Chunk = null
-    },
-    
-    pub fn generate(x: i32, z: i32) Chunk {
+    pub fn generate(world: *World, x: i32, z: i32) Chunk {
         var buf = Chunk {
+            .world = world,
             .x = x,
             .z = z,
-            .blocks = @bitCast(
-                [_] *const Block { &Block.air } ** 
-                    (chunk_side * chunk_height * chunk_side)
-            ),
-            .neighbors = .{}
+            .blocks = @bitCast([_] *const Block { &Block.air } ** (chunk_side * chunk_height * chunk_side)),
+            .mesh = Array(BlockVertex).init(std.heap.c_allocator)
         };
         
         for (0..chunk_side) |ix| {
@@ -178,10 +164,8 @@ pub const Chunk = struct {
                 
                 for (0..chunk_height) |iy| {
                     const fiy: f32 = @floatFromInt(iy);
-                    if (fiy < 160 * (height * 0.5 + 0.5))
-                        buf.blocks[ix][iy][iz] = &Block.grass;
-                    if (fiy >= 160 * (height * 0.5 + 0.5) and fiy < 76)
-                        buf.blocks[ix][iy][iz] = &Block.water;
+                    if (fiy < 160 * (height * 0.5 + 0.5)) buf.blocks[ix][iy][iz] = &Block.grass;
+                    if (fiy >= 160 * (height * 0.5 + 0.5) and fiy < 76) buf.blocks[ix][iy][iz] = &Block.water;
                 }
             }
         }
@@ -189,7 +173,47 @@ pub const Chunk = struct {
         return buf;
     }
     
-    pub fn mesh(self: *const Chunk, buffer: *TerrainDrawObject) !void {
+    /// Safe way to access block data, returns `null` on OOB access.
+    pub fn maybeGetBlockAt(self: *const Chunk, x: usize, y: usize, z: usize) ?*const Block {
+        if (x < 0 or y < 0 or z < 0 or x >= chunk_side or y >= chunk_height or z >= chunk_side) return null
+        else return self.blocks[x][y][z];
+    }
+    
+    pub fn sort(self: *Chunk) void {
+        const pos = self.world.player.super.position;
+        
+        const triangles: [*][3]BlockVertex = @ptrCast(self.mesh.items.ptr);
+        const len = self.mesh.items.len / 3;
+        const slice = triangles[0..len];
+        
+        const camera = @Vector(3, f32) { pos.x, pos.y, pos.z };
+        
+        std.sort.heap([3]BlockVertex, slice, camera, triCompare);
+    }
+    
+    fn triCompare(pos: @Vector(3, f32), lhs: [3]BlockVertex, rhs: [3]BlockVertex) bool {
+        return triDistance(pos, lhs) > triDistance(pos, rhs);
+    }
+    
+    fn triDistance(pos: @Vector(3, f32), tri: [3]BlockVertex) f32 {
+        const v1 = @Vector(3, f32) {
+            tri[0].position.x, tri[0].position.y, tri[0].position.z
+        };
+        const v2 = @Vector(3, f32) {
+            tri[1].position.x, tri[1].position.y, tri[1].position.z
+        };
+        const v3 = @Vector(3, f32) {
+            tri[2].position.x, tri[2].position.y, tri[2].position.z
+        };
+        
+        const average = (v1 + v2 + v3) / @Vector(3, f32) { 3, 3, 3 };
+        const diff = average - pos;
+        return @sqrt(@reduce(.Add, diff * diff));
+    }
+    
+    pub fn remesh(self: *Chunk) !void {
+        self.mesh.clearRetainingCapacity();
+        
         const ofx: f32 = @floatFromInt(self.x * chunk_side);
         const ofz: f32 = @floatFromInt(self.z * chunk_side);
         
@@ -205,60 +229,35 @@ pub const Chunk = struct {
                     const sy: i32 = @intCast(iy);
                     const sz: i32 = @intCast(iz);
                     
-                    try block.mesh(
-                        .{
-                            .north = !self.isOpaqueAt(sx, sy, sz + 1),
-                            .south = !self.isOpaqueAt(sx, sy, sz - 1),
-                            .east  = !self.isOpaqueAt(sx + 1, sy, sz),
-                            .west  = !self.isOpaqueAt(sx - 1, sy, sz),
-                            .up    = !self.isOpaqueAt(sx, sy + 1, sz),
-                            .down  = !self.isOpaqueAt(sx, sy - 1, sz)
-                        },
-                        fx + ofx, fy, fz + ofz, buffer
-                    );
+                    try block.mesh(self.facesFor(sx, sy, sz), fx + ofx, fy, fz + ofz, &self.mesh);
                 }
             }
         }
     }
     
-    fn isOpaqueAt(self: *const Chunk, x: i32, y: i32, z: i32) bool {
-        const ux: usize = @intCast(@abs(x));
-        const uy: usize = @intCast(@abs(y));
-        const uz: usize = @intCast(@abs(z));
+    inline fn facesFor(self: *const Chunk, x: i32, y: i32, z: i32) Block.Faces {
+        const gx = x + self.x * chunk_side;
+        const gy = y;
+        const gz = z + self.z * chunk_side;
         
-        return if (y < 0 or y >= chunk_height) false
-        else if (x < 0) {
-            const west = self.neighbors.west orelse return true;
-            return !west.blocks[chunk_side - 1][uy][uz].is_transparent;
-        } else if (x >= chunk_side) {
-            const east = self.neighbors.east orelse return true;
-            return !east.blocks[0][uy][uz].is_transparent;
-        } else if (z < 0) {
-            const south = self.neighbors.south orelse return true;
-            return !south.blocks[ux][uy][chunk_side - 1].is_transparent;
-        } else if (z >= chunk_side) {
-            const north = self.neighbors.north orelse return true;
-            return !north.blocks[ux][uy][0].is_transparent;
-        } else { 
-            return !self.blocks[ux][uy][uz].is_transparent;
+        return .{
+            .north = !self.world.isOpaqueAt(gx,     gy,     gz + 1),
+            .south = !self.world.isOpaqueAt(gx,     gy,     gz - 1),
+            .east  = !self.world.isOpaqueAt(gx + 1, gy,     gz    ),
+            .west  = !self.world.isOpaqueAt(gx - 1, gy,     gz    ),
+            .up    = !self.world.isOpaqueAt(gx,     gy + 1, gz    ),
+            .down  = !self.world.isOpaqueAt(gx,     gy - 1, gz    )
         };
     }
 };
 
 /// A collection of properties describing a block.
-/// 
-/// TODO(TeamPuzel):
-/// - (!!) Benchmark usage through pointers vs inline.
-/// - (?)  Light absorption coefficient, e.g. for water, which should get
-///        progressively darker as depth increases.
 pub const Block = struct {
     /// Identifies the exact type at runtime.
     tag: Tag,
-    
     /// Describes which faces use which texture.
     /// Not present for invisible blocks.
     atlas_offsets: ?AtlasOffsets = null,
-    
     is_transparent: bool = false,
     
     pub const Tag = enum (u16) {
@@ -305,82 +304,82 @@ pub const Block = struct {
     /// A coefficient for converting block coordinates to uv coordinates.
     pub const tex_uvc = tex_block_size / tex_side_len;
     
-    pub fn mesh(self: *const Block, faces: Faces, x: f32, y: f32, z: f32, buffer: *TerrainDrawObject) !void {
+    pub fn mesh(self: *const Block, faces: Faces, x: f32, y: f32, z: f32, vertices: *Array(BlockVertex)) !void {
         const off = self.atlas_offsets orelse return; // Abort if not drawable
         
         const s = half_side;
         const c = tex_uvc;
-        const o: f32 = if (self.tag == .water) 0.4 else 1.0;
+        const o: f32 = if (self.tag == .water) 0.4 else 1.0; // HACK :)
         
         // Back
         if (faces.north) {
-            try buffer.vertices.appendSlice(&.{
-                Vertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       1, 1, 1, o), // TR
-                Vertex.init( s + x,  s + y,  s + z,   c * off.back.x,     c * off.back.y,       1, 1, 1, o), // TL
-                Vertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   1, 1, 1, o), // BL
-                Vertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       1, 1, 1, o), // TR
-                Vertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   1, 1, 1, o), // BL
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.back.x + c, c * off.back.y + c,   1, 1, 1, o)  // BR
+            try vertices.appendSlice(&.{
+                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       1, 1, 1, o), // TR
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.back.x,     c * off.back.y,       1, 1, 1, o), // TL
+                BlockVertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       1, 1, 1, o), // TR
+                BlockVertex.init( s + x, -s + y,  s + z,   c * off.back.x,     c * off.back.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.back.x + c, c * off.back.y + c,   1, 1, 1, o)  // BR
             });
         }
         // Front
         if (faces.south) {
-            try buffer.vertices.appendSlice(&.{
-                Vertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, o), // TR
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, o), // TL
-                Vertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, o), // BL
-                Vertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, o), // TR
-                Vertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, o), // BL
-                Vertex.init( s + x, -s + y, -s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, o)  // BR
+            try vertices.appendSlice(&.{
+                BlockVertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, o), // TR
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y,       1, 1, 1, o), // TL
+                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       1, 1, 1, o), // TR
+                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.front.x,     c * off.front.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.front.x + c, c * off.front.y + c,   1, 1, 1, o)  // BR
             });
         }
         // Right
         if (faces.east) {
-            try buffer.vertices.appendSlice(&.{
-                Vertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       1, 1, 1, o), // TR
-                Vertex.init( s + x,  s + y, -s + z,   c * off.right.x,     c * off.right.y,       1, 1, 1, o), // TL
-                Vertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   1, 1, 1, o), // BL
-                Vertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       1, 1, 1, o), // TR
-                Vertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   1, 1, 1, o), // BL
-                Vertex.init( s + x, -s + y,  s + z,   c * off.right.x + c, c * off.right.y + c,   1, 1, 1, o)  // BR
+            try vertices.appendSlice(&.{
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       1, 1, 1, o), // TR
+                BlockVertex.init( s + x,  s + y, -s + z,   c * off.right.x,     c * off.right.y,       1, 1, 1, o), // TL
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       1, 1, 1, o), // TR
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.right.x,     c * off.right.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init( s + x, -s + y,  s + z,   c * off.right.x + c, c * off.right.y + c,   1, 1, 1, o)  // BR
             });
         }
         // Left
         if (faces.west) {
-            try buffer.vertices.appendSlice(&.{
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       1, 1, 1, o), // TR
-                Vertex.init(-s + x,  s + y,  s + z,   c * off.left.x,     c * off.left.y,       1, 1, 1, o), // TL
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   1, 1, 1, o), // BL
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       1, 1, 1, o), // TR
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   1, 1, 1, o), // BL
-                Vertex.init(-s + x, -s + y, -s + z,   c * off.left.x + c, c * off.left.y + c,   1, 1, 1, o)  // BR
+            try vertices.appendSlice(&.{
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       1, 1, 1, o), // TR
+                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.left.x,     c * off.left.y,       1, 1, 1, o), // TL
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       1, 1, 1, o), // TR
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.left.x,     c * off.left.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.left.x + c, c * off.left.y + c,   1, 1, 1, o)  // BR
             });
         }
         // Top
         if (faces.up) {
-            try buffer.vertices.appendSlice(&.{
-                Vertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       1, 1, 1, o), // TR
-                Vertex.init(-s + x,  s + y,  s + z,   c * off.top.x,     c * off.top.y,       1, 1, 1, o), // TL
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   1, 1, 1, o), // BL
-                Vertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       1, 1, 1, o), // TR
-                Vertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   1, 1, 1, o), // BL
-                Vertex.init( s + x,  s + y, -s + z,   c * off.top.x + c, c * off.top.y + c,   1, 1, 1, o)  // BR
+            try vertices.appendSlice(&.{
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       1, 1, 1, o), // TR
+                BlockVertex.init(-s + x,  s + y,  s + z,   c * off.top.x,     c * off.top.y,       1, 1, 1, o), // TL
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       1, 1, 1, o), // TR
+                BlockVertex.init(-s + x,  s + y, -s + z,   c * off.top.x,     c * off.top.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init( s + x,  s + y, -s + z,   c * off.top.x + c, c * off.top.y + c,   1, 1, 1, o)  // BR
             });
         }
         // Bottom
         if (faces.down) {
-            try buffer.vertices.appendSlice(&.{
-                Vertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       1, 1, 1, o), // TR
-                Vertex.init(-s + x, -s + y, -s + z,   c * off.bottom.x,     c * off.bottom.y,       1, 1, 1, o), // TL
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   1, 1, 1, o), // BL
-                Vertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       1, 1, 1, o), // TR
-                Vertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   1, 1, 1, o), // BL
-                Vertex.init( s + x, -s + y,  s + z,   c * off.bottom.x + c, c * off.bottom.y + c,   1, 1, 1, o)  // BR
+            try vertices.appendSlice(&.{
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       1, 1, 1, o), // TR
+                BlockVertex.init(-s + x, -s + y, -s + z,   c * off.bottom.x,     c * off.bottom.y,       1, 1, 1, o), // TL
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       1, 1, 1, o), // TR
+                BlockVertex.init(-s + x, -s + y,  s + z,   c * off.bottom.x,     c * off.bottom.y + c,   1, 1, 1, o), // BL
+                BlockVertex.init( s + x, -s + y,  s + z,   c * off.bottom.x + c, c * off.bottom.y + c,   1, 1, 1, o)  // BR
             });
         }
     }
     
-    // MARK: - Instances -------------------------------------------------------
+    // MARK: - Instances -----------------------------------------------------------------------------------------------
     
     /// This special block represents the absence of a block.
     pub const air = Block {
@@ -451,10 +450,19 @@ pub const Block = struct {
     };
 };
 
-// MARK: - Entities ------------------------------------------------------------
+// MARK: - Entities ----------------------------------------------------------------------------------------------------
 
 pub const Position = extern struct {
-    x: f32 = 0, y: f32 = 0, z: f32 = 0
+    x: f32 = 0, y: f32 = 0, z: f32 = 0,
+    
+    pub inline fn distanceTo(self: Position, other: Position) f32 {
+        const pow = std.math.pow;
+        return @sqrt(
+            pow(f32, self.x - other.x, 2) +
+            pow(f32, self.y - other.y, 2) +
+            pow(f32, self.z - other.z, 2)
+        );
+    }
 };
 
 pub const Orientation = extern struct {
@@ -490,29 +498,5 @@ pub const Player = extern struct {
         if (engine.input.key(.d)) self.super.position.x          += 0.01 * world.delta;
         if (engine.input.key(.space)) self.super.position.y      += 0.01 * world.delta;
         if (engine.input.key(.left_shift)) self.super.position.y -= 0.01 * world.delta;
-    }
-};
-
-const TerrainDrawObject = engine.graphics.DrawObject(Vertex);
-
-const Vertex = packed struct {
-    position: Vertex.Position,
-    tex_coord: TextureCoord,
-    color: engine.Color = engine.Color.white,
-    
-    pub const Position = packed struct {
-        x: f32, y: f32, z: f32
-    };
-
-    pub const TextureCoord = packed struct {
-        u: f32, v: f32
-    };
-    
-    pub fn init(x: f32, y: f32, z: f32, u: f32, v: f32, r: f32, g: f32, b: f32, a: f32) Vertex {
-        return .{
-            .position = .{ .x = x, .y = y, .z = z },
-            .tex_coord = .{ .u = u, .v = v },
-            .color = .{ .r = r, .g = g, .b = b, .a = a }
-        };
     }
 };

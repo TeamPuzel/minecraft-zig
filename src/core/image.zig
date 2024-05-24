@@ -1,4 +1,3 @@
-
 const std = @import("std");
 
 pub const TGAConstPtr = packed struct {
