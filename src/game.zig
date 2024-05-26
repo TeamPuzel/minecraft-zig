@@ -6,7 +6,7 @@ const TGAConstPtr = engine.image.TGAConstPtr;
 const Matrix4x4 = engine.math.Matrix4x4;
 const Array = std.ArrayList;
 
-const render_distance = 2;
+const render_distance = 6;
 
 // Idea to implement entities - obj-c style retain/release
 /// NOTE: The `World` requires a stable identity.
@@ -100,7 +100,13 @@ pub const World = struct {
     
     pub fn getUnifiedMesh(self: *const World) !Array(BlockVertex) {
         var buf = Array(BlockVertex).init(std.heap.c_allocator);
+        
+        var total_count: usize = 0;
+        for (self.visible_chunks.items) |chunk| total_count += chunk.*.mesh.items.len;
+        try buf.ensureTotalCapacity(total_count);
+        
         for (self.visible_chunks.items) |chunk| try buf.appendSlice(chunk.*.mesh.items);
+        
         return buf;
     }
     
@@ -112,13 +118,9 @@ pub const World = struct {
         const ly = y;
         const lz = @mod((@mod(z, chunk_side) + chunk_side), chunk_side);
         
-        const ulx: usize = @intCast(lx);
-        const uly: usize = @intCast(ly);
-        const ulz: usize = @intCast(lz);
-        
         const chunk = self.chunks.get(.{ .x = cx, .z = cz }) orelse return true;
         // const chunk.isGenerated else { return true }
-        const block = chunk.maybeGetBlockAt(ulx, uly, ulz) orelse return true;
+        const block = chunk.maybeGetBlockAt(lx, ly, lz) orelse return true;
         return block.atlas_offsets != null and !block.is_transparent;
     }
 };
@@ -169,12 +171,19 @@ pub const Chunk = struct {
     }
     
     /// Safe way to access block data, returns `null` on OOB access.
-    pub fn maybeGetBlockAt(self: *const Chunk, x: usize, y: usize, z: usize) ?*const Block {
-        if (x < 0 or y < 0 or z < 0 or x >= chunk_side or y >= chunk_height or z >= chunk_side) return null
-        else return self.blocks[x][y][z];
+    pub fn maybeGetBlockAt(self: *const Chunk, x: i32, y: i32, z: i32) ?*const Block {
+        if (x < 0 or y < 0 or z < 0 or x >= chunk_side or y >= chunk_height or z >= chunk_side) return null;
+        const ux: usize = @intCast(x);
+        const uy: usize = @intCast(y);
+        const uz: usize = @intCast(z);
+        return self.blocks[ux][uy][uz];
     }
     
     pub fn sort(self: *Chunk) void {
+        if (self.world.player.super.position.distanceTo(
+            .{ .x = @floatFromInt(self.x), .y = 0, .z = @floatFromInt(self.z) }
+        ) > chunk_side * 4) return;
+        
         const pos = self.world.player.super.position;
         
         const triangles: [*][3]BlockVertex = @ptrCast(self.mesh.items.ptr);

@@ -41,6 +41,7 @@ pub fn init(name: [:0]const u8) !void {
     _ = c.SDL_GL_SetAttribute(
         c.SDL_GL_CONTEXT_PROFILE_MASK, c.SDL_GL_CONTEXT_PROFILE_CORE
     );
+    _ = c.SDL_GL_SetAttribute(c.SDL_GL_MULTISAMPLESAMPLES, 4);
     _ = c.SDL_GL_SetAttribute(c.SDL_GL_DOUBLEBUFFER, 1);
     _ = c.SDL_GL_SetAttribute(c.SDL_GL_DEPTH_SIZE, 24);
     _ = c.SDL_GL_SetSwapInterval(1);
@@ -76,6 +77,7 @@ pub fn init(name: [:0]const u8) !void {
     c.glEnable(c.GL_DEPTH_TEST);
     c.glEnable(c.GL_CULL_FACE);
     c.glEnable(c.GL_BLEND);
+    c.glEnable(c.GL_MULTISAMPLE);
     c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
     
     c.SDL_GL_GetDrawableSize(window, &width, &height);

@@ -12,6 +12,13 @@ const VertexBuffer = engine.graphics.VertexBuffer;
 
 const terrain = TGAConstPtr { .raw = assets.terrain_tga };
 
+pub const std_options = std.Options {
+    .log_level = .debug,
+    .side_channels_mitigations = .none
+};
+
+const sky_color = engine.Color { .r = 0.67, .g = 0.8, .b = 1 };
+
 pub fn main() !void {
     try engine.init("Minecraft");
     defer engine.deinit();
@@ -24,7 +31,7 @@ pub fn main() !void {
     var world = try World.init();
     defer world.deinit();
     
-    engine.graphics.setClearColor(.{ .r = 0.52, .g = 0.67, .b = 0.97 });
+    engine.graphics.setClearColor(sky_color);
     
     while (engine.update()) {
         engine.clear();
@@ -79,8 +86,17 @@ fn render(world: *const World) !void {
     
     const sampler = terrain_shader.getUniform("texture_id");
     const transform = terrain_shader.getUniform("transform");
+    const camera_position = terrain_shader.getUniform("camera_position");
+    const fog_color = terrain_shader.getUniform("fog_color");
     c.glUniform1i(sampler, 0);
     c.glUniformMatrix4fv(transform, 1, c.GL_TRUE, @ptrCast(&world.getPrimaryMatrix()));
+    c.glUniform3f(
+        camera_position,
+        world.player.super.position.x,
+        world.player.super.position.y,
+        world.player.super.position.z
+    );
+    c.glUniform4f(fog_color, sky_color.r, sky_color.g, sky_color.b, sky_color.a);
     
     terrain_buffer.draw();
 }

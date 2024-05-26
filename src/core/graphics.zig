@@ -135,12 +135,22 @@ pub fn VertexBuffer(comptime V: type) type {
         
         pub fn sync(self: *const Self) void {
             self.bind();
-            c.glBufferData(
-                c.GL_ARRAY_BUFFER,
+            var size: c_int = undefined;
+            c.glGetBufferParameteriv(c.GL_ARRAY_BUFFER, c.GL_BUFFER_SIZE, &size);
+            if (size >= self.vertices.items.len) {
+                c.glBufferSubData(
+                c.GL_ARRAY_BUFFER, 0,
                 @intCast(self.vertices.items.len * @sizeOf(V)),
-                self.vertices.items.ptr,
-                c.GL_DYNAMIC_DRAW
+                self.vertices.items.ptr
             );
+            } else {
+                c.glBufferData(
+                    c.GL_ARRAY_BUFFER,
+                    @intCast(self.vertices.items.len * @sizeOf(V)),
+                    self.vertices.items.ptr,
+                    c.GL_DYNAMIC_DRAW
+                );
+            }
         }
         
         pub fn orphan(self: *const Self) void {
