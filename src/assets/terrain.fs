@@ -19,7 +19,7 @@ void main() {
         texture(texture_id, vertex_uv) * vertex_color,
         fog_color,
         min(rangeNormalize(
-            distance(camera_position, vertex_position),
+            max(0, distance(camera_position, vertex_position) - 30),
             0, 100,
             0, 1
         ), 1)

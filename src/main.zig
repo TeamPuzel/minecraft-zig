@@ -36,7 +36,7 @@ pub fn main() !void {
     while (engine.update()) {
         engine.clear();
         
-        world.update();
+        try world.update();
         try render(world);
         
         engine.swapBuffers();

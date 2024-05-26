@@ -61,7 +61,7 @@ pub const World = struct {
         std.heap.c_allocator.destroy(self);
     }
     
-    pub fn update(self: *World) void {
+    pub fn update(self: *World) !void {
         const ns: f64 = @floatFromInt(self.timer.read());
         const ms: f64 = ns * 0.000001;
         self.delta = @floatCast(ms);
@@ -70,10 +70,83 @@ pub const World = struct {
         self.player.super.update(&self.player, self);
         
         if (self.player.super.position.distanceTo(self.sorted_at) > 1) {
-            for (self.visible_chunks.items) |chunk| chunk.sort();
+            // for (self.visible_chunks.items) |chunk| chunk.sort();
             self.sorted_at = self.player.super.position;
         }
         
+        // Remove far away chunks from cache
+        var remove_list = Array(ChunkPosition).init(std.heap.c_allocator);
+        defer remove_list.deinit();
+        for (self.visible_chunks.items) |chunk|
+            if (self.player.super.position.distanceTo(.{
+                .x = @floatFromInt(chunk.x * chunk_side),
+                .y = self.player.super.position.y,
+                .z = @floatFromInt(chunk.z * chunk_side)
+            }) > chunk_side * render_distance * 1.6) // Multiply to account for diagonal and extend past fog.
+                try remove_list.append(.{ .x = chunk.x, .z = chunk.z });
+        
+        for (remove_list.items) |pos| {
+            const index = blk: {
+                for (self.visible_chunks.items, 0..) |chunk, i| if (chunk.x == pos.x and chunk.z == pos.z) break :blk i;
+                unreachable;
+            };
+            self.visible_chunks.items[index].mesh.?.deinit();
+            self.visible_chunks.items[index].mesh = null;
+            _ = self.visible_chunks.swapRemove(index);
+        }
+        
+        // Load attempt 1 (maybe generate) new chunks (extremely naive)
+        
+        // var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
+        //     var iz: i32 = -render_distance; while (iz <= render_distance) : (iz += 1) {
+        //         const ofx = ix + @as(i32, @intFromFloat(@divFloor(self.player.super.position.x, chunk_side)));
+        //         const ofz = iz + @as(i32, @intFromFloat(@divFloor(self.player.super.position.z, chunk_side)));
+                
+        //         for (self.visible_chunks.items) |chunk| if (chunk.x == ofx and chunk.z == ofz) continue;
+                
+        //         // Generate chunk
+        //         const result = try self.chunks.getOrPut(.{ .x = ofx, .z = ofz });
+        //         if (!result.found_existing) {
+        //             result.value_ptr.* = try std.heap.c_allocator.create(Chunk);
+        //             result.value_ptr.*.* = Chunk.generate(self, ofx, ofz);
+        //         }
+        //         try self.visible_chunks.append(result.value_ptr.*);
+        //     }
+        // }
+        
+        // Load attempt 2 (maybe generate) new chunks (extremely naive)
+        var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
+            var iz: i32 = -render_distance; up: while (iz <= render_distance) : (iz += 1) {
+                // const ofx = ix + @as(i32, @intFromFloat(@divFloor(self.player.super.position.x, chunk_side)));
+                // const ofz = iz + @as(i32, @intFromFloat(@divFloor(self.player.super.position.z, chunk_side)));
+                const ofx = @as(i32, @intFromFloat(@divFloor(self.player.super.position.x, chunk_side)));
+                const ofz = @as(i32, @intFromFloat(@divFloor(self.player.super.position.z, chunk_side)));
+                
+                for (self.visible_chunks.items) |chunk| if (chunk.x == ofx and chunk.z == ofz) continue :up;
+                
+                // Get or generate
+                const result = try self.chunks.getOrPut(.{ .x = ofx, .z = ofz });
+                if (!result.found_existing) {
+                    result.value_ptr.* = try std.heap.c_allocator.create(Chunk);
+                    result.value_ptr.*.* = Chunk.generate(self, ofx, ofz);
+                }
+                try self.visible_chunks.append(result.value_ptr.*);
+                if (result.value_ptr.*.mesh == null) result.value_ptr.*.mesh = Array(BlockVertex).init(std.heap.c_allocator);
+                try result.value_ptr.*.remesh();
+                
+                // Remesh neighbors
+                const north = self.chunks.get(.{ .x = ofx, .z = ofz + 1 });
+                if (north != null and north.?.mesh != null) try north.?.remesh();
+                const south = self.chunks.get(.{ .x = ofx, .z = ofz - 1 });
+                if (south != null and south.?.mesh != null) try south.?.remesh();
+                const east = self.chunks.get(.{ .x = ofx + 1, .z = ofz });
+                if (east != null and east.?.mesh != null) try east.?.remesh();
+                const west = self.chunks.get(.{ .x = ofx - 1, .z = ofz });
+                if (west != null and west.?.mesh != null) try west.?.remesh();
+            }
+        }
+        
+        // Sort visible chunks
         std.sort.heap(*const Chunk, self.visible_chunks.items, self.player.super.position, chunkDistanceCompare);
         
         _ = self.timer.lap();
@@ -102,10 +175,10 @@ pub const World = struct {
         var buf = Array(BlockVertex).init(std.heap.c_allocator);
         
         var total_count: usize = 0;
-        for (self.visible_chunks.items) |chunk| total_count += chunk.*.mesh.items.len;
+        for (self.visible_chunks.items) |chunk| total_count += chunk.*.mesh.?.items.len;
         try buf.ensureTotalCapacity(total_count);
         
-        for (self.visible_chunks.items) |chunk| try buf.appendSlice(chunk.*.mesh.items);
+        for (self.visible_chunks.items) |chunk| try buf.appendSlice(chunk.*.mesh.?.items);
         
         return buf;
     }
@@ -136,7 +209,7 @@ pub const Chunk = struct {
     x: i32,
     z: i32,
     blocks: [chunk_side][chunk_height][chunk_side]*const Block,
-    mesh: Array(BlockVertex),
+    mesh: ?Array(BlockVertex),
     
     pub fn generate(world: *World, x: i32, z: i32) Chunk {
         var buf = Chunk {
@@ -180,10 +253,10 @@ pub const Chunk = struct {
     }
     
     pub fn sort(self: *Chunk) void {
-        if (self.world.player.super.position.distanceTo(
-            .{ .x = @floatFromInt(self.x), .y = 0, .z = @floatFromInt(self.z) }
-        ) > chunk_side * 4) return;
-        
+        // if (self.world.player.super.position.distanceTo(
+        //     .{ .x = @floatFromInt(self.x), .y = self.world.player.super.position.y, .z = @floatFromInt(self.z) }
+        // ) > chunk_side * 4) return;
+    
         const pos = self.world.player.super.position;
         
         const triangles: [*][3]BlockVertex = @ptrCast(self.mesh.items.ptr);
@@ -216,7 +289,7 @@ pub const Chunk = struct {
     }
     
     pub fn remesh(self: *Chunk) !void {
-        self.mesh.clearRetainingCapacity();
+        self.mesh.?.clearRetainingCapacity();
         
         const ofx: f32 = @floatFromInt(self.x * chunk_side);
         const ofz: f32 = @floatFromInt(self.z * chunk_side);
@@ -233,7 +306,7 @@ pub const Chunk = struct {
                     const sy: i32 = @intCast(iy);
                     const sz: i32 = @intCast(iz);
                     
-                    try block.mesh(self.facesFor(sx, sy, sz), fx + ofx, fy, fz + ofz, &self.mesh);
+                    try block.mesh(self.facesFor(sx, sy, sz), fx + ofx, fy, fz + ofz, &self.mesh.?);
                 }
             }
         }
