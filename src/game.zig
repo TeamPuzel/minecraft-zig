@@ -473,6 +473,15 @@ pub const Position = extern struct {
             pow(f32, self.z - other.z, 2)
         );
     }
+    
+    pub inline fn moveInDirectionAtSpeed(self: *Position, direction: Orientation, speed: f32) void {
+        const heading = @Vector(3, f32) {
+            @sin(std.math.degreesToRadians(direction.yaw)) * speed, 0,
+            @cos(std.math.degreesToRadians(direction.yaw)) * speed
+        };
+        const svec: @Vector(3, f32) = @bitCast(self.*);
+        self.* = @bitCast(heading + svec);
+    }
 };
 
 pub const Orientation = extern struct {
@@ -498,15 +507,28 @@ pub const Player = extern struct {
         const mouse = engine.input.relativeMouse();
         self.super.orientation.yaw += mouse.x / 10;
         self.super.orientation.pitch += mouse.y / 10;
-        self.super.orientation.pitch = 
-            std.math.clamp(self.super.orientation.pitch, -90, 90);
+        self.super.orientation.pitch = std.math.clamp(self.super.orientation.pitch, -90, 90);
             
-        // Basic, camera unaligned movement
-        if (engine.input.key(.w)) self.super.position.z          += 0.01 * world.delta;
-        if (engine.input.key(.a)) self.super.position.x          -= 0.01 * world.delta;
-        if (engine.input.key(.s)) self.super.position.z          -= 0.01 * world.delta;
-        if (engine.input.key(.d)) self.super.position.x          += 0.01 * world.delta;
+        if (engine.input.key(.w)) self.super.position.moveInDirectionAtSpeed(self.super.orientation, 0.01 * world.delta);
+        if (engine.input.key(.a)) self.super.position.moveInDirectionAtSpeed(
+            .{ .pitch = self.super.orientation.pitch, .yaw = self.super.orientation.yaw + 270, .roll = self.super.orientation.roll },
+            0.01 * world.delta
+        );
+        if (engine.input.key(.s)) self.super.position.moveInDirectionAtSpeed(
+            .{ .pitch = self.super.orientation.pitch, .yaw = self.super.orientation.yaw + 180, .roll = self.super.orientation.roll },
+            0.01 * world.delta
+        );
+        if (engine.input.key(.d)) self.super.position.moveInDirectionAtSpeed(
+            .{ .pitch = self.super.orientation.pitch, .yaw = self.super.orientation.yaw + 90, .roll = self.super.orientation.roll },
+            0.01 * world.delta
+        );
         if (engine.input.key(.space)) self.super.position.y      += 0.01 * world.delta;
         if (engine.input.key(.left_shift)) self.super.position.y -= 0.01 * world.delta;
+        
+        // Basic, camera unaligned movement
+        // if (engine.input.key(.w)) self.super.position.z          += 0.01 * world.delta;
+        // if (engine.input.key(.a)) self.super.position.x          -= 0.01 * world.delta;
+        // if (engine.input.key(.s)) self.super.position.z          -= 0.01 * world.delta;
+        // if (engine.input.key(.d)) self.super.position.x          += 0.01 * world.delta;
     }
 };
