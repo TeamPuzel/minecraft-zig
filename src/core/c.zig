@@ -77,6 +77,7 @@ pub usingnamespace if (builtin.os.tag == .linux) struct {
     pub const SDL_GL_CONTEXT_PROFILE_MASK = 21;
     pub const SDL_GL_DOUBLEBUFFER = 5;
     pub const SDL_GL_DEPTH_SIZE = 6;
+    pub const SDL_GL_MULTISAMPLESAMPLES = 14;
     
     pub const SDL_GL_CONTEXT_PROFILE_CORE = 1;
     

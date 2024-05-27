@@ -9,9 +9,9 @@ const Array = std.ArrayList;
 const render_distance = 6;
 
 // Idea to implement entities - obj-c style retain/release
-/// NOTE: The `World` requires a stable identity.
+/// NOTE: An instance of `World` requires a stable identity.
 pub const World = struct {
-    // A hash map of all the chunks in the world.
+    /// A hash map of all the chunks in the world.
     chunks: ChunkStorage,
     /// A cache for chunks within render distance, sorted by distance
     /// from the camera entity.
@@ -35,18 +35,6 @@ pub const World = struct {
             .player = .{},
             .timer = undefined
         };
-        
-        // var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
-        //     var iz: i32 = -render_distance; while (iz <= render_distance) : (iz += 1) {
-        //         // Generate chunk
-        //         try self.chunks.put(.{ .x = ix, .z = iz }, try std.heap.c_allocator.create(Chunk));
-        //         const chunk = self.chunks.get(.{ .x = ix, .z = iz }).?;
-        //         chunk.* = Chunk.generate(self, ix, iz);
-        //         try self.visible_chunks.append(chunk);
-        //     }
-        // }
-        
-        // for (self.visible_chunks.items) |chunk| try chunk.remesh();
         
         self.timer = try std.time.Timer.start();
         
@@ -106,11 +94,18 @@ pub const World = struct {
                     const result = try self.chunks.getOrPut(.{ .x = ofx, .z = ofz });
                     if (!result.found_existing) {
                         result.value_ptr.* = try std.heap.c_allocator.create(Chunk);
-                        result.value_ptr.*.* = Chunk.generate(self, ofx, ofz);
+                        result.value_ptr.*.* = Chunk.init(self, ofx, ofz);
                     }
                     try self.visible_chunks.append(result.value_ptr.*);
                     if (result.value_ptr.*.mesh == null) result.value_ptr.*.mesh = Array(BlockVertex).init(std.heap.c_allocator);
                     try result.value_ptr.*.remesh();
+                    
+                    @prefetch(result.value_ptr.*, std.builtin.PrefetchOptions {
+                        .cache = .data, .locality = 3, .rw = .read
+                    });
+                    @prefetch(result.value_ptr.*.mesh.?.items.ptr, std.builtin.PrefetchOptions {
+                        .cache = .data, .locality = 3, .rw = .write
+                    });
                     
                     // Remesh neighbors
                     const north = self.chunks.get(.{ .x = ofx, .z = ofz + 1 });
@@ -183,6 +178,18 @@ pub const World = struct {
         const block = chunk.maybeGetBlockAt(lx, ly, lz) orelse return true;
         return block.atlas_offsets != null and !block.is_transparent;
     }
+    
+    pub fn lightLevelAt(self: *const World, x: i32, y: i32, z: i32) u8 {
+        const cx = @divFloor(x, chunk_side);
+        const cz = @divFloor(z, chunk_side);
+        
+        const lx = @mod((@mod(x, chunk_side) + chunk_side), chunk_side);
+        const ly = y;
+        const lz = @mod((@mod(z, chunk_side) + chunk_side), chunk_side);
+        
+        const chunk = self.chunks.get(.{ .x = cx, .z = cz }) orelse return 15;
+        return chunk.maybeGetLightLevelAt(lx, ly, lz) orelse return 15;
+    }
 };
 
 /// The key for chunk storage.
@@ -196,31 +203,35 @@ pub const Chunk = struct {
     x: i32,
     z: i32,
     blocks: [chunk_side][chunk_height][chunk_side]*const Block,
+    light: [chunk_side][chunk_height][chunk_side]u8, // TODO(!): Test what this does as u4
     mesh: ?Array(BlockVertex),
     
-    pub fn init(world: *World, x: i32, z: i32) Chunk {
-        return Chunk {
-            .world = world,
-            .x = x,
-            .z = z,
-            .blocks = @bitCast([_] *const Block { &Block.air } ** (chunk_side * chunk_height * chunk_side)),
-            .mesh = Array(BlockVertex).init(std.heap.c_allocator)
-        };
-    }
+    // pub fn init(world: *World, x: i32, z: i32) Chunk {
+    //     return Chunk {
+    //         .world = world,
+    //         .x = x,
+    //         .z = z,
+    //         .blocks = @bitCast([_] *const Block { &Block.air } ** (chunk_side * chunk_height * chunk_side)),
+    //         .light = @bitCast([_] u8 { 0 } ** (chunk_side * chunk_height * chunk_side)),
+    //         .mesh = Array(BlockVertex).init(std.heap.c_allocator)
+    //     };
+    // }
     
     pub fn deinit(self: *const Chunk) void {
         if (self.mesh != null) self.mesh.?.deinit();
     }
     
-    pub fn generate(world: *World, x: i32, z: i32) Chunk {
+    pub fn init(world: *World, x: i32, z: i32) Chunk {
         var buf = Chunk {
             .world = world,
             .x = x,
             .z = z,
             .blocks = @bitCast([_] *const Block { &Block.air } ** (chunk_side * chunk_height * chunk_side)),
+            .light = @bitCast([_] u8 { 0 } ** (chunk_side * chunk_height * chunk_side)),
             .mesh = Array(BlockVertex).init(std.heap.c_allocator)
         };
         
+        // Height pass
         for (0..chunk_side) |ix| {
             for (0..chunk_side) |iz| {
                 const fix: f32 = @floatFromInt(ix);
@@ -228,20 +239,55 @@ pub const Chunk = struct {
                 const fx: f32 = @floatFromInt(x);
                 const fz: f32 = @floatFromInt(z);
                 
-                const octave1 = engine.noise.perlin((fix + 16 * fx) * 0.02, (fiz + 16 * fz) * 0.02);
-                const octave2 = engine.noise.perlin((fix + 16 * fx) * 0.03, (fiz + 16 * fz) * 0.03);
-                const octave3 = engine.noise.perlin((fix + 16 * fx) * 0.1, (fiz + 16 * fz) * 0.1);
-                const height = octave1 / 3 + ((octave2 + octave3) / 20);
+                const pos_x = fix + chunk_side * fx;
+                const pos_z = fiz + chunk_side * fz;
+                
+                const octave1 = engine.noise.perlin(pos_x * 0.01, pos_z * 0.01);
+                const octave2 = engine.noise.perlin(pos_x * 0.05, pos_z * 0.05) / 2;
+                const octave3 = engine.noise.perlin(pos_x * 0.1, pos_z * 0.1) / 4;
+                
+                const height = (octave1 + octave2 + octave3) / 3;
                 
                 for (0..chunk_height) |iy| {
                     const fiy: f32 = @floatFromInt(iy);
-                    if (fiy < 160 * (height * 0.5 + 0.5)) buf.blocks[ix][iy][iz] = &Block.grass;
+                    if (fiy < 160 * (height * 0.5 + 0.5)) buf.blocks[ix][iy][iz] = &Block.stone;
                     if (fiy >= 160 * (height * 0.5 + 0.5) and fiy < 76) buf.blocks[ix][iy][iz] = &Block.water;
                 }
             }
         }
         
+        // Dirt and grass pass
+        for (0..chunk_side) |ix| {
+            for (0..chunk_side) |iz| {
+                const max_thickness = 3; // TODO(!): This has to be random but determined by seed
+                var current_thickness: u32 = 0;
+                var iyi: isize = chunk_height - 1; while (iyi >= 0) : (iyi -= 1) { const iy: usize = @intCast(iyi);
+                    if (buf.blocks[ix][iy][iz] == &Block.stone) {
+                        buf.blocks[ix][iy][iz] = if (current_thickness == 0) &Block.grass else &Block.dirt;
+                        current_thickness += 1;
+                    }
+                    if (current_thickness == max_thickness) break;
+                }
+            }
+        }
+        
+        buf.recomputeLight();
         return buf;
+    }
+    
+    pub fn recomputeLight(self: *Chunk) void {
+        // Ambient
+        for (0..chunk_side) |ix| {
+            for (0..chunk_side) |iz| {
+                var iyi: isize = chunk_height - 1; while (iyi >= 0) : (iyi -= 1) { const iy: usize = @intCast(iyi);
+                    if (self.blocks[ix][iy][iz] == &Block.air) {
+                        self.light[ix][iy][iz] = 15;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
     }
     
     /// Safe way to access block data, returns `null` on OOB access.
@@ -251,6 +297,15 @@ pub const Chunk = struct {
         const uy: usize = @intCast(y);
         const uz: usize = @intCast(z);
         return self.blocks[ux][uy][uz];
+    }
+    
+    /// Safe way to access light data, returns `null` on OOB access.
+    pub fn maybeGetLightLevelAt(self: *const Chunk, x: i32, y: i32, z: i32) ?u8 {
+        if (x < 0 or y < 0 or z < 0 or x >= chunk_side or y >= chunk_height or z >= chunk_side) return null;
+        const ux: usize = @intCast(x);
+        const uy: usize = @intCast(y);
+        const uz: usize = @intCast(z);
+        return self.light[ux][uy][uz];
     }
     
     pub fn sort(self: *Chunk) void {
@@ -307,7 +362,7 @@ pub const Chunk = struct {
                     const sy: i32 = @intCast(iy);
                     const sz: i32 = @intCast(iz);
                     
-                    try block.mesh(self.facesFor(sx, sy, sz), fx + ofx, fy, fz + ofz, &self.mesh.?);
+                    try block.mesh(self, self.facesFor(sx, sy, sz), fx + ofx, fy, fz + ofz, &self.mesh.?);
                 }
             }
         }
@@ -382,19 +437,26 @@ pub const Block = struct {
     /// A coefficient for converting block coordinates to uv coordinates.
     pub const tex_uvc = tex_block_size / tex_side_len;
     
-    pub fn mesh(self: *const Block, faces: Faces, x: f32, y: f32, z: f32, vertices: *Array(BlockVertex)) !void {
+    pub fn mesh(self: *const Block, chunk: *const Chunk, faces: Faces, x: f32, y: f32, z: f32, vertices: *Array(BlockVertex)) !void {
         const off = self.atlas_offsets orelse return; // Abort if not drawable
         
         const s = half_side;
         const c = tex_uvc;
         
-        const r: f32 = if (self.tag == .grass) 1.0 else 1.0; // HACK :)
-        const g: f32 = if (self.tag == .grass) 1.0 else 1.0; // HACK :)
-        const b: f32 = if (self.tag == .grass) 1.0 else 1.0; // HACK :)
         const a: f32 = if (self.tag == .water) 1.0 else 1.0; // HACK :)
+        
+        const ix: i32 = @intFromFloat(@floor(x));
+        const iy: i32 = @intFromFloat(@floor(y));
+        const iz: i32 = @intFromFloat(@floor(z));
         
         // Back
         if (faces.north) {
+            const light_level: f32 = @floatFromInt(chunk.world.lightLevelAt(ix, iy, iz + 1));
+            const light_c = light_level / 15;
+            const r: f32 = light_c;
+            const g: f32 = light_c;
+            const b: f32 = light_c;
+            
             try vertices.appendSlice(&.{
                 BlockVertex.init(-s + x,  s + y,  s + z,   c * off.back.x + c, c * off.back.y,       r, g, b, a), // TR
                 BlockVertex.init( s + x,  s + y,  s + z,   c * off.back.x,     c * off.back.y,       r, g, b, a), // TL
@@ -406,6 +468,12 @@ pub const Block = struct {
         }
         // Front
         if (faces.south) {
+            const light_level: f32 = @floatFromInt(chunk.world.lightLevelAt(ix, iy, iz - 1));
+            const light_c = light_level / 15;
+            const r: f32 = light_c;
+            const g: f32 = light_c;
+            const b: f32 = light_c;
+            
             try vertices.appendSlice(&.{
                 BlockVertex.init( s + x,  s + y, -s + z,   c * off.front.x + c, c * off.front.y,       r, g, b, a), // TR
                 BlockVertex.init(-s + x,  s + y, -s + z,   c * off.front.x,     c * off.front.y,       r, g, b, a), // TL
@@ -417,6 +485,12 @@ pub const Block = struct {
         }
         // Right
         if (faces.east) {
+            const light_level: f32 = @floatFromInt(chunk.world.lightLevelAt(ix + 1, iy, iz));
+            const light_c = light_level / 15;
+            const r: f32 = light_c;
+            const g: f32 = light_c;
+            const b: f32 = light_c;
+            
             try vertices.appendSlice(&.{
                 BlockVertex.init( s + x,  s + y,  s + z,   c * off.right.x + c, c * off.right.y,       r, g, b, a), // TR
                 BlockVertex.init( s + x,  s + y, -s + z,   c * off.right.x,     c * off.right.y,       r, g, b, a), // TL
@@ -428,6 +502,12 @@ pub const Block = struct {
         }
         // Left
         if (faces.west) {
+            const light_level: f32 = @floatFromInt(chunk.world.lightLevelAt(ix - 1, iy, iz));
+            const light_c = light_level / 15;
+            const r: f32 = light_c;
+            const g: f32 = light_c;
+            const b: f32 = light_c;
+            
             try vertices.appendSlice(&.{
                 BlockVertex.init(-s + x,  s + y, -s + z,   c * off.left.x + c, c * off.left.y,       r, g, b, a), // TR
                 BlockVertex.init(-s + x,  s + y,  s + z,   c * off.left.x,     c * off.left.y,       r, g, b, a), // TL
@@ -439,6 +519,12 @@ pub const Block = struct {
         }
         // Top
         if (faces.up) {
+            const light_level: f32 = @floatFromInt(chunk.world.lightLevelAt(ix, iy + 1, iz));
+            const light_c = light_level / 15;
+            const r: f32 = light_c;
+            const g: f32 = light_c;
+            const b: f32 = light_c;
+            
             try vertices.appendSlice(&.{
                 BlockVertex.init( s + x,  s + y,  s + z,   c * off.top.x + c, c * off.top.y,       r, g, b, a), // TR
                 BlockVertex.init(-s + x,  s + y,  s + z,   c * off.top.x,     c * off.top.y,       r, g, b, a), // TL
@@ -450,6 +536,12 @@ pub const Block = struct {
         }
         // Bottom
         if (faces.down) {
+            const light_level: f32 = @floatFromInt(chunk.world.lightLevelAt(ix, iy - 1, iz));
+            const light_c = light_level / 15;
+            const r: f32 = light_c;
+            const g: f32 = light_c;
+            const b: f32 = light_c;
+            
             try vertices.appendSlice(&.{
                 BlockVertex.init( s + x, -s + y, -s + z,   c * off.bottom.x + c, c * off.bottom.y,       r, g, b, a), // TR
                 BlockVertex.init(-s + x, -s + y, -s + z,   c * off.bottom.x,     c * off.bottom.y,       r, g, b, a), // TL
