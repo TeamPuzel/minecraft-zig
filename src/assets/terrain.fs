@@ -20,7 +20,7 @@ void main() {
         fog_color,
         min(rangeNormalize(
             max(0, distance(camera_position, vertex_position) - 30),
-            0, 100,
+            0, 50,
             0, 1
         ), 1)
     );

@@ -137,12 +137,12 @@ pub fn VertexBuffer(comptime V: type) type {
             self.bind();
             var size: c_int = undefined;
             c.glGetBufferParameteriv(c.GL_ARRAY_BUFFER, c.GL_BUFFER_SIZE, &size);
-            if (size >= self.vertices.items.len) {
+            if (@divTrunc(size, @sizeOf(V)) >= self.vertices.items.len) {
                 c.glBufferSubData(
-                c.GL_ARRAY_BUFFER, 0,
-                @intCast(self.vertices.items.len * @sizeOf(V)),
-                self.vertices.items.ptr
-            );
+                    c.GL_ARRAY_BUFFER, 0,
+                    @intCast(self.vertices.items.len * @sizeOf(V)),
+                    self.vertices.items.ptr
+                );
             } else {
                 c.glBufferData(
                     c.GL_ARRAY_BUFFER,

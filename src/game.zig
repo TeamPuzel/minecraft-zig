@@ -22,6 +22,7 @@ pub const World = struct {
     sorted_at: Position = .{ .x = 0, .y = 0, .z = 0 },
     timer: std.time.Timer,
     delta: f32 = 0,
+    frame: usize = 0,
     
     pub const ChunkStorage = std.AutoArrayHashMap(ChunkPosition, *Chunk);
     pub const ChunkCache = Array(*Chunk);
@@ -35,17 +36,17 @@ pub const World = struct {
             .timer = undefined
         };
         
-        var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
-            var iz: i32 = -render_distance; while (iz <= render_distance) : (iz += 1) {
-                // Generate chunk
-                try self.chunks.put(.{ .x = ix, .z = iz }, try std.heap.c_allocator.create(Chunk));
-                const chunk = self.chunks.get(.{ .x = ix, .z = iz }).?;
-                chunk.* = Chunk.generate(self, ix, iz);
-                try self.visible_chunks.append(chunk);
-            }
-        }
+        // var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
+        //     var iz: i32 = -render_distance; while (iz <= render_distance) : (iz += 1) {
+        //         // Generate chunk
+        //         try self.chunks.put(.{ .x = ix, .z = iz }, try std.heap.c_allocator.create(Chunk));
+        //         const chunk = self.chunks.get(.{ .x = ix, .z = iz }).?;
+        //         chunk.* = Chunk.generate(self, ix, iz);
+        //         try self.visible_chunks.append(chunk);
+        //     }
+        // }
         
-        for (self.visible_chunks.items) |chunk| try chunk.remesh();
+        // for (self.visible_chunks.items) |chunk| try chunk.remesh();
         
         self.timer = try std.time.Timer.start();
         
@@ -62,17 +63,14 @@ pub const World = struct {
     }
     
     pub fn update(self: *World) !void {
+        self.frame += 1;
+        
         const ns: f64 = @floatFromInt(self.timer.read());
         const ms: f64 = ns * 0.000001;
         self.delta = @floatCast(ms);
         std.log.info("ms: {d:.6}\n", .{ ms });
         
         self.player.super.update(&self.player, self);
-        
-        if (self.player.super.position.distanceTo(self.sorted_at) > 1) {
-            // for (self.visible_chunks.items) |chunk| chunk.sort();
-            self.sorted_at = self.player.super.position;
-        }
         
         // Remove far away chunks from cache
         var remove_list = Array(ChunkPosition).init(std.heap.c_allocator);
@@ -95,59 +93,48 @@ pub const World = struct {
             _ = self.visible_chunks.swapRemove(index);
         }
         
-        // Load attempt 1 (maybe generate) new chunks (extremely naive)
-        
-        // var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
-        //     var iz: i32 = -render_distance; while (iz <= render_distance) : (iz += 1) {
-        //         const ofx = ix + @as(i32, @intFromFloat(@divFloor(self.player.super.position.x, chunk_side)));
-        //         const ofz = iz + @as(i32, @intFromFloat(@divFloor(self.player.super.position.z, chunk_side)));
-                
-        //         for (self.visible_chunks.items) |chunk| if (chunk.x == ofx and chunk.z == ofz) continue;
-                
-        //         // Generate chunk
-        //         const result = try self.chunks.getOrPut(.{ .x = ofx, .z = ofz });
-        //         if (!result.found_existing) {
-        //             result.value_ptr.* = try std.heap.c_allocator.create(Chunk);
-        //             result.value_ptr.*.* = Chunk.generate(self, ofx, ofz);
-        //         }
-        //         try self.visible_chunks.append(result.value_ptr.*);
-        //     }
-        // }
-        
-        // Load attempt 2 (maybe generate) new chunks (extremely naive)
-        var ix: i32 = -render_distance; while (ix <= render_distance) : (ix += 1) {
-            var iz: i32 = -render_distance; up: while (iz <= render_distance) : (iz += 1) {
-                // const ofx = ix + @as(i32, @intFromFloat(@divFloor(self.player.super.position.x, chunk_side)));
-                // const ofz = iz + @as(i32, @intFromFloat(@divFloor(self.player.super.position.z, chunk_side)));
-                const ofx = @as(i32, @intFromFloat(@divFloor(self.player.super.position.x, chunk_side)));
-                const ofz = @as(i32, @intFromFloat(@divFloor(self.player.super.position.z, chunk_side)));
-                
-                for (self.visible_chunks.items) |chunk| if (chunk.x == ofx and chunk.z == ofz) continue :up;
-                
-                // Get or generate
-                const result = try self.chunks.getOrPut(.{ .x = ofx, .z = ofz });
-                if (!result.found_existing) {
-                    result.value_ptr.* = try std.heap.c_allocator.create(Chunk);
-                    result.value_ptr.*.* = Chunk.generate(self, ofx, ofz);
+        // Load (maybe generate) new chunks (extremely naive)
+        if (self.frame % 10 == 0) { // Only generate every once in a while, that way it isn't noticeably slow.
+            var ix: i32 = -render_distance; gen_loop: while (ix <= render_distance) : (ix += 1) {
+                var iz: i32 = -render_distance; up: while (iz <= render_distance) : (iz += 1) {
+                    const ofx = ix + @as(i32, @intFromFloat(@divFloor(self.player.super.position.x, chunk_side)));
+                    const ofz = iz + @as(i32, @intFromFloat(@divFloor(self.player.super.position.z, chunk_side)));
+                    
+                    for (self.visible_chunks.items) |chunk| if (chunk.x == ofx and chunk.z == ofz) continue :up;
+                    
+                    // Get or generate
+                    const result = try self.chunks.getOrPut(.{ .x = ofx, .z = ofz });
+                    if (!result.found_existing) {
+                        result.value_ptr.* = try std.heap.c_allocator.create(Chunk);
+                        result.value_ptr.*.* = Chunk.generate(self, ofx, ofz);
+                    }
+                    try self.visible_chunks.append(result.value_ptr.*);
+                    if (result.value_ptr.*.mesh == null) result.value_ptr.*.mesh = Array(BlockVertex).init(std.heap.c_allocator);
+                    try result.value_ptr.*.remesh();
+                    
+                    // Remesh neighbors
+                    const north = self.chunks.get(.{ .x = ofx, .z = ofz + 1 });
+                    if (north != null and north.?.mesh != null) try north.?.remesh();
+                    const south = self.chunks.get(.{ .x = ofx, .z = ofz - 1 });
+                    if (south != null and south.?.mesh != null) try south.?.remesh();
+                    const east = self.chunks.get(.{ .x = ofx + 1, .z = ofz });
+                    if (east != null and east.?.mesh != null) try east.?.remesh();
+                    const west = self.chunks.get(.{ .x = ofx - 1, .z = ofz });
+                    if (west != null and west.?.mesh != null) try west.?.remesh();
+                    
+                    break :gen_loop; // Do not generate more than one per frame, too slow
                 }
-                try self.visible_chunks.append(result.value_ptr.*);
-                if (result.value_ptr.*.mesh == null) result.value_ptr.*.mesh = Array(BlockVertex).init(std.heap.c_allocator);
-                try result.value_ptr.*.remesh();
-                
-                // Remesh neighbors
-                const north = self.chunks.get(.{ .x = ofx, .z = ofz + 1 });
-                if (north != null and north.?.mesh != null) try north.?.remesh();
-                const south = self.chunks.get(.{ .x = ofx, .z = ofz - 1 });
-                if (south != null and south.?.mesh != null) try south.?.remesh();
-                const east = self.chunks.get(.{ .x = ofx + 1, .z = ofz });
-                if (east != null and east.?.mesh != null) try east.?.remesh();
-                const west = self.chunks.get(.{ .x = ofx - 1, .z = ofz });
-                if (west != null and west.?.mesh != null) try west.?.remesh();
             }
         }
         
         // Sort visible chunks
         std.sort.heap(*const Chunk, self.visible_chunks.items, self.player.super.position, chunkDistanceCompare);
+        
+        // Sort inside nearby chunks
+        if (self.player.super.position.distanceTo(self.sorted_at) > 1) {
+            // for (self.visible_chunks.items) |chunk| chunk.sort();
+            self.sorted_at = self.player.super.position;
+        }
         
         _ = self.timer.lap();
     }
@@ -210,6 +197,20 @@ pub const Chunk = struct {
     z: i32,
     blocks: [chunk_side][chunk_height][chunk_side]*const Block,
     mesh: ?Array(BlockVertex),
+    
+    pub fn init(world: *World, x: i32, z: i32) Chunk {
+        return Chunk {
+            .world = world,
+            .x = x,
+            .z = z,
+            .blocks = @bitCast([_] *const Block { &Block.air } ** (chunk_side * chunk_height * chunk_side)),
+            .mesh = Array(BlockVertex).init(std.heap.c_allocator)
+        };
+    }
+    
+    pub fn deinit(self: *const Chunk) void {
+        if (self.mesh != null) self.mesh.?.deinit();
+    }
     
     pub fn generate(world: *World, x: i32, z: i32) Chunk {
         var buf = Chunk {
