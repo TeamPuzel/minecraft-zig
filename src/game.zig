@@ -24,7 +24,7 @@ pub const World = struct {
     delta: f32 = 0,
     frame: usize = 0,
     
-    pub const ChunkStorage = std.AutoArrayHashMap(ChunkPosition, *Chunk);
+    pub const ChunkStorage = std.AutoHashMap(ChunkPosition, *Chunk);
     pub const ChunkCache = Array(*Chunk);
     
     pub fn init() !*World {
@@ -76,8 +76,15 @@ pub const World = struct {
                 for (self.visible_chunks.items, 0..) |chunk, i| if (chunk.x == pos.x and chunk.z == pos.z) break :blk i;
                 unreachable;
             };
+            const x = self.visible_chunks.items[index].x;
+            const z = self.visible_chunks.items[index].z;
+            
             self.visible_chunks.items[index].mesh.?.deinit();
             self.visible_chunks.items[index].mesh = null;
+            if (!self.visible_chunks.items[index].was_modified) {
+                std.heap.c_allocator.destroy(self.chunks.get(.{ .x = x, .z = z }).?);
+                _ = self.chunks.remove(.{ .x = x, .z = z });
+            }
             _ = self.visible_chunks.swapRemove(index);
         }
         
@@ -203,24 +210,12 @@ pub const Chunk = struct {
     world: *World,
     x: i32,
     z: i32,
+    /// HACK: Dropping unmodified chunks from memory completely.
+    /// Ideally just store the difference, this is very, very inefficient.
+    was_modified: bool = false,
     blocks: [chunk_side][chunk_height][chunk_side]*const Block,
     light: [chunk_side][chunk_height][chunk_side]u8, // TODO(!): Test what this does as u4
     mesh: ?Array(BlockVertex),
-    
-    // pub fn init(world: *World, x: i32, z: i32) Chunk {
-    //     return Chunk {
-    //         .world = world,
-    //         .x = x,
-    //         .z = z,
-    //         .blocks = @bitCast([_] *const Block { &Block.air } ** (chunk_side * chunk_height * chunk_side)),
-    //         .light = @bitCast([_] u8 { 0 } ** (chunk_side * chunk_height * chunk_side)),
-    //         .mesh = Array(BlockVertex).init(std.heap.c_allocator)
-    //     };
-    // }
-    
-    pub fn deinit(self: *const Chunk) void {
-        if (self.mesh != null) self.mesh.?.deinit();
-    }
     
     pub fn init(world: *World, x: i32, z: i32) Chunk {
         var buf = Chunk {
@@ -274,6 +269,10 @@ pub const Chunk = struct {
         
         buf.recomputeLight();
         return buf;
+    }
+    
+    pub fn deinit(self: *const Chunk) void {
+        if (self.mesh != null) self.mesh.?.deinit();
     }
     
     pub fn recomputeLight(self: *Chunk) void {
