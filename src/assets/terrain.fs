@@ -7,6 +7,7 @@ in vec4 vertex_color;
 uniform sampler2D texture_id;
 uniform vec4 fog_color;
 uniform vec3 camera_position;
+uniform float render_distance;
 
 out vec4 out_color;
 
@@ -19,7 +20,7 @@ void main() {
         texture(texture_id, vertex_uv) * vertex_color,
         fog_color,
         min(rangeNormalize(
-            max(0, distance(camera_position, vertex_position) - 30),
+            max(0, distance(camera_position, vertex_position) + 10 - (render_distance * 16 / 2)),
             0, 50,
             0, 1
         ), 1)

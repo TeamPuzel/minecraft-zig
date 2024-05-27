@@ -6,7 +6,7 @@ const TGAConstPtr = engine.image.TGAConstPtr;
 const Matrix4x4 = engine.math.Matrix4x4;
 const Array = std.ArrayList;
 
-const render_distance = 6;
+pub const render_distance = 6;
 
 // Idea to implement entities - obj-c style retain/release
 /// NOTE: An instance of `World` requires a stable identity.
@@ -82,6 +82,7 @@ pub const World = struct {
         }
         
         // Load (maybe generate) new chunks (extremely naive)
+        // TODO(!): Create a list of missing chunks, sort and generate closest first
         if (self.frame % 10 == 0) { // Only generate every once in a while, that way it isn't noticeably slow.
             var ix: i32 = -render_distance; gen_loop: while (ix <= render_distance) : (ix += 1) {
                 var iz: i32 = -render_distance; up: while (iz <= render_distance) : (iz += 1) {

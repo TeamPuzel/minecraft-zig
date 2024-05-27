@@ -88,6 +88,7 @@ fn render(world: *const World) !void {
     const transform = terrain_shader.getUniform("transform");
     const camera_position = terrain_shader.getUniform("camera_position");
     const fog_color = terrain_shader.getUniform("fog_color");
+    const render_distance = terrain_shader.getUniform("render_distance");
     c.glUniform1i(sampler, 0);
     c.glUniformMatrix4fv(transform, 1, c.GL_TRUE, @ptrCast(&world.getPrimaryMatrix()));
     c.glUniform3f(
@@ -97,6 +98,7 @@ fn render(world: *const World) !void {
         world.player.super.position.z
     );
     c.glUniform4f(fog_color, sky_color.r, sky_color.g, sky_color.b, sky_color.a);
+    c.glUniform1f(render_distance, game.render_distance);
     
     terrain_buffer.draw();
 }
