@@ -49,18 +49,17 @@ inline fn randomGradient(vec: @Vector(2, i32)) @Vector(2, f32) {
 
 inline fn dotGridGradient(iv: @Vector(2, i32), v: @Vector(2, f32)) f32 {
     const gradient = randomGradient(iv);
-    
-    const ixf: f32 = @floatFromInt(iv[0]);
-    const iyf: f32 = @floatFromInt(iv[1]);
-    const ivf = @Vector(2, f32) { ixf, iyf };
-    
+
+    const ivf: @Vector(2, f32) = @floatFromInt(iv);
     const d = v - ivf;
     
     const m = d * gradient;
     return m[0] + m[1];
 }
 
-const permutation = [_]i32 { 
+// Wait, why am I not using this anywhere, something isn't right
+// TODO(!): Figure out why
+const permutation = [_]i32 {
     151, 160, 137,  91,  90,  15, 131,  13, 201,  95,  96,  53, 194, 233,   7, 225,
     140,  36, 103,  30,  69, 142,   8,  99,  37, 240,  21,  10,  23, 190,   6, 148,
     247, 120, 234,  75,   0,  26, 197,  62,  94, 252, 219, 203, 117,  35,  11,  32,

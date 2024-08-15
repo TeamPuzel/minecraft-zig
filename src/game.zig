@@ -74,7 +74,7 @@ pub const World = struct {
         for (remove_list.items) |pos| {
             const index = blk: {
                 for (self.visible_chunks.items, 0..) |chunk, i| if (chunk.x == pos.x and chunk.z == pos.z) break :blk i;
-                unreachable;
+                unreachable; // SAFETY: It should be impossible for the cache to contain a nonexistent chunk.
             };
             const x = self.visible_chunks.items[index].x;
             const z = self.visible_chunks.items[index].z;
@@ -90,7 +90,7 @@ pub const World = struct {
         
         // Load (maybe generate) new chunks (extremely naive)
         // TODO(!): Create a list of missing chunks, sort and generate closest first
-        if (self.frame % 10 == 0) { // Only generate every once in a while, that way it isn't noticeably slow.
+        if (self.frame % 10 == 0) { // Only generate every once in a while, that way it isn't noticeably freezing.
             var ix: i32 = -render_distance; gen_loop: while (ix <= render_distance) : (ix += 1) {
                 var iz: i32 = -render_distance; up: while (iz <= render_distance) : (iz += 1) {
                     const ofx = ix + @as(i32, @intFromFloat(@divFloor(self.player.super.position.x, chunk_side)));
